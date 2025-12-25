@@ -13,7 +13,7 @@ from contextlib import AsyncExitStack
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aiofiles.os as aio_os
 import pytz
@@ -31,17 +31,17 @@ from plugins.alist2strm.filter import BloomCleaner, IoCleaner, SetCleaner
 
 class Alist2Strm(_PluginBase):
     # 插件名称
-    plugin_name = "Alist2Strm"
+    plugin_name = "Alist2Strm(高级版)"
     # 插件描述
-    plugin_desc = "从alist生成strm。"
+    plugin_desc = "从alist生成strm，支持多目录，自定义格式。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/yubanmeiqin9048/MoviePilot-Plugins/main/icons/Alist.png"
+    plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Alist.png"
     # 插件版本
-    plugin_version = "1.8.7"
+    plugin_version = "2.0.0"
     # 插件作者
-    plugin_author = "yubanmeiqin9048"
+    plugin_author = "mubey"
     # 作者主页
-    author_url = "https://github.com/yubanmeiqin9048"
+    author_url = "https://github.com/mubeyout"
     # 插件配置项ID前缀
     plugin_config_prefix = "alist2strm_"
     # 加载顺序
@@ -53,14 +53,14 @@ class Alist2Strm(_PluginBase):
     _enabled = False
     _url = ""
     _token = ""
-    # 重构：单行映射配置，格式为 源目录#目标目录#路径替换（路径替换可选）
-    _dir_mappings = ""
+    _dir_mappings = ""  # 改为目录映射，格式：源目录#目标目录，每行一个
     _sync_remote = False
+    _path_replace = ""
     _url_replace = ""
     _cron = ""
     _scheduler = None
     _onlyonce = False
-    # 文件类型配置相关属性
+    # 新增：文件类型配置相关属性
     _video_enabled = True
     _audio_enabled = True
     _other_enabled = False
@@ -80,18 +80,17 @@ class Alist2Strm(_PluginBase):
             self._onlyonce = config.get("onlyonce")
             self._url = config.get("url", "")
             self._token = config.get("token", "")
-            # 读取单行映射配置
-            self._dir_mappings = config.get("dir_mappings", "")
+            self._dir_mappings = config.get("dir_mappings", "")  # 读取目录映射配置
             self._sync_remote = config.get("sync_remote")
             self._cron = config.get("cron")
+            self._path_replace = config.get("path_replace", "")
             self._url_replace = config.get("url_replace")
             self._max_download_worker = int(config.get("max_download_worker", 3))
             self._max_list_worker = int(config.get("max_list_worker", 7))
             self._max_depth = config.get("max_depth") or -1
             self._traversal_mode = config.get("traversal_mode") or "bfs"
             self._filter_mode = config.get("filter_mode") or "set"
-            
-            # 初始化文件类型配置
+            # 新增：初始化文件类型配置
             self._video_enabled = config.get("video_enabled", True)
             self._audio_enabled = config.get("audio_enabled", True)
             self._other_enabled = config.get("other_enabled", False)
@@ -117,45 +116,10 @@ class Alist2Strm(_PluginBase):
                     self._scheduler.start()
             self.__update_config()
 
-    def _parse_dir_mappings(self) -> List[Dict[str, str]]:
-        """
-        解析目录映射配置
-        格式：每行一个映射，格式为 源目录#目标目录[#路径替换]
-        示例：
-        /movie#/local/movie
-        /tv#/local/tv#tv_path
-        /music#/local/music#music_path
-        """
-        mappings = []
-        if not self._dir_mappings.strip():
-            return mappings
-            
-        # 按行分割
-        lines = [line.strip() for line in self._dir_mappings.split('\n') if line.strip()]
-        
-        for line in lines:
-            # 按#分割，最多分割2次
-            parts = line.split('#', 2)
-            if len(parts) >= 2:
-                source_dir = parts[0].strip()
-                target_dir = parts[1].strip()
-                path_replace = parts[2].strip() if len(parts) >=3 else ""
-                
-                if source_dir and target_dir:
-                    mappings.append({
-                        "source_dir": source_dir,
-                        "target_dir": target_dir,
-                        "path_replace": path_replace
-                    })
-                else:
-                    logger.warning(f"无效的目录映射配置行: {line} - 源目录或目标目录为空")
-            else:
-                logger.warning(f"无效的目录映射配置行: {line} - 格式错误，应为 源目录#目标目录")
-        
-        return mappings
-
     def init_cleaner(self) -> None:
-        """根据 filter_mode 实例化对应的 Cleaner"""
+        """
+        根据 filter_mode 实例化对应的 Cleaner。
+        """
         if self._filter_mode == "set":
             use_cleaner = SetCleaner
         elif self._filter_mode == "io":
@@ -164,20 +128,32 @@ class Alist2Strm(_PluginBase):
             use_cleaner = BloomCleaner
         else:
             raise ValueError(f"未知的过滤模式: {self._filter_mode}")
-        
-        # 更新需要处理的后缀列表
+        # 新增：更新需要处理的后缀列表
         self._process_file_suffix = self.__get_process_suffix() + ["strm"]
-        
-        # 为每个目录创建cleaner
-        self.cleaners = {}
-        mappings = self._parse_dir_mappings()
-        for mapping in mappings:
-            target_dir = Path(mapping.get("target_dir", ""))
-            if target_dir:
-                self.cleaners[str(target_dir)] = use_cleaner(
-                    need_suffix=self._process_file_suffix,
-                    target_dir=target_dir,
-                )
+        # 初始化清理器时使用所有目标目录的父目录
+        target_dirs = [Path(mapping.split('#')[1]) for mapping in self._parse_dir_mappings() if len(mapping.split('#')) == 2]
+        if target_dirs:
+            # 使用第一个目标目录作为主要清理根目录，实际清理会处理所有映射目录
+            self.cleaner = use_cleaner(
+                need_suffix=self._process_file_suffix,
+                target_dir=target_dirs[0]
+            )
+        else:
+            self.cleaner = use_cleaner(
+                need_suffix=self._process_file_suffix,
+                target_dir=Path("")
+            )
+
+    def _parse_dir_mappings(self) -> List[str]:
+        """解析目录映射配置，返回非空且格式正确的映射列表"""
+        mappings = []
+        if not self._dir_mappings:
+            return mappings
+        for line in self._dir_mappings.splitlines():
+            line = line.strip()
+            if line and '#' in line:
+                mappings.append(line)
+        return mappings
 
     def __get_process_suffix(self) -> List[str]:
         """获取需要处理的文件后缀列表"""
@@ -204,43 +180,20 @@ class Alist2Strm(_PluginBase):
             self.__max_list_sem = asyncio.Semaphore(self._max_list_worker)
             self.__iter_tasks_done = asyncio.Event()
             logger.info("Alist2Strm 插件开始执行")
-            
-            # 遍历处理每个目录映射
-            mappings = self._parse_dir_mappings()
-            if not mappings:
-                logger.warning("未配置有效的目录映射，插件执行终止")
+            # 重新初始化清理器以应用最新的后缀配置
+            self.init_cleaner()
+            await self.cleaner.init_cleaner()
+            # 处理所有目录映射
+            dir_mappings = self._parse_dir_mappings()
+            if not dir_mappings:
+                logger.warning("未配置有效的目录映射，跳过执行")
                 return
-                
-            for mapping in mappings:
-                source_dir = mapping.get("source_dir", "")
-                target_dir = mapping.get("target_dir", "")
-                if not source_dir or not target_dir:
-                    logger.warning(f"跳过无效的目录映射: {mapping}")
-                    continue
-                    
-                # 初始化当前目录的清理器
-                cleaner_key = str(Path(target_dir))
-                if cleaner_key not in self.cleaners:
-                    # 动态创建cleaner
-                    if self._filter_mode == "set":
-                        use_cleaner = SetCleaner
-                    elif self._filter_mode == "io":
-                        use_cleaner = IoCleaner
-                    elif self._filter_mode == "bf":
-                        use_cleaner = BloomCleaner
-                    else:
-                        use_cleaner = SetCleaner
-                        
-                    self.cleaners[cleaner_key] = use_cleaner(
-                        need_suffix=self._process_file_suffix,
-                        target_dir=Path(target_dir),
-                    )
-                    
-                self.current_cleaner = self.cleaners[cleaner_key]
-                self.current_mapping = mapping
-                await self.current_cleaner.init_cleaner()
-                await self.__process()
-            
+            for mapping in dir_mappings:
+                source_dir, target_dir = mapping.split('#', 1)
+                source_dir = source_dir.strip()
+                target_dir = target_dir.strip()
+                logger.info(f"开始处理目录映射: {source_dir} -> {target_dir}")
+                await self.__process(source_dir, target_dir)
             logger.info("Alist2Strm 插件执行完成")
         except Exception as e:
             logger.error(
@@ -267,17 +220,23 @@ class Alist2Strm(_PluginBase):
             logger.info(f"文件类型 {remote_path.path} 不在处理列表中")
             return False
 
-        local_path = self.__computed_target_path(remote_path)
+        # 这里的source_dir和target_dir会在__process中动态传入，临时使用第一个映射进行计算
+        dir_mappings = self._parse_dir_mappings()
+        if not dir_mappings:
+            return False
+            
+        source_dir, target_dir = dir_mappings[0].split('#', 1)
+        local_path = self.__computed_target_path(remote_path, source_dir, target_dir)
         if self._sync_remote:
             self.processed_remote_paths_in_local.add(local_path)
 
-        if self.current_cleaner.contains(local_path):
+        if self.cleaner.contains(local_path):
             logger.info(f"文件 {local_path.name} 已存在，跳过处理 {remote_path.path}")
             return False
 
         return True
 
-    async def __process(self) -> None:
+    async def __process(self, source_dir: str, target_dir: str) -> None:
         strm_queue = asyncio.Queue()
         subtitle_queue = asyncio.Queue()
 
@@ -288,13 +247,14 @@ class Alist2Strm(_PluginBase):
             session = await stack.enter_async_context(ClientSession())
             tg = await stack.enter_async_context(asyncio.TaskGroup())
 
-            # 启动生产者线程
+            # 启动生产者线程，传入当前处理的源目录
             tg.create_task(
                 self.__produce_paths(
                     client=client, 
                     strm_queue=strm_queue, 
                     subtitle_queue=subtitle_queue,
-                    source_dir=self.current_mapping.get("source_dir", "")
+                    source_dir=source_dir,
+                    target_dir=target_dir
                 )
             )
 
@@ -305,16 +265,17 @@ class Alist2Strm(_PluginBase):
             # 清理任务
             if self._sync_remote:
                 await self.__iter_tasks_done.wait()
-                await self.current_cleaner.clean_inviially(self.processed_remote_paths_in_local)
+                await self.cleaner.clean_inviially(self.processed_remote_paths_in_local)
                 self.processed_remote_paths_in_local.clear()
-                logger.info(f"清理 {self.current_mapping.get('target_dir')} 下过期的 .strm 文件完成")
+                logger.info("清理过期的 .strm 文件完成")
 
     async def __produce_paths(
         self,
         client: AlistClient,
         strm_queue: asyncio.Queue,
         subtitle_queue: asyncio.Queue,
-        source_dir: str
+        source_dir: str,
+        target_dir: str
     ) -> None:
         """遍历Alist目录并分发任务到相应队列"""
         async for path in client.iter_path(
@@ -322,17 +283,17 @@ class Alist2Strm(_PluginBase):
             max_depth=self._max_depth,
             traversal_mode=self._traversal_mode,
             max_list_workers=self.__max_list_sem,
-            iter_dir=source_dir,
+            iter_dir=source_dir,  # 使用当前处理的源目录
             filter_func=self.__filter_func,
         ):
-            target_path = self.__computed_target_path(path)
+            target_path = self.__computed_target_path(path, source_dir, target_dir)
             # 根据文件类型分发到不同队列
             if path.suffix in settings.RMT_SUBEXT:
                 await subtitle_queue.put((path, target_path))
             else:
                 await strm_queue.put((path, target_path))
             # 记录已处理文件
-            self.current_cleaner.add(target_path)
+            self.cleaner.add(target_path)
         # 发送结束信号
         await strm_queue.put(None)
         await subtitle_queue.put(None)
@@ -343,7 +304,7 @@ class Alist2Strm(_PluginBase):
             item = await queue.get()
             if item is None:  # 结束信号
                 queue.task_done()
-                logger.info(f"{self.current_mapping.get('target_dir')} 所有strm生成完成")
+                logger.info("所有strm生成完成")
                 break
             path, target_path = item
             try:
@@ -361,7 +322,7 @@ class Alist2Strm(_PluginBase):
             item = await queue.get()
             if item is None:  # 结束信号
                 queue.task_done()
-                logger.info(f"{self.current_mapping.get('target_dir')} 所有字幕下载完成")
+                logger.info("所有字幕下载完成")
                 break
             path, target_path = item
             try:
@@ -394,20 +355,22 @@ class Alist2Strm(_PluginBase):
                     await file.write(await resp.read())
         logger.info(f"已下载字幕: {target_path}")
 
-    def __computed_target_path(self, path: AlistFile) -> Path:
-        """计算strm文件保存路径"""
-        return self.__cached_computed_target_path(
-            path.path, 
-            path.suffix,
-            self.current_mapping.get("source_dir", ""),
-            self.current_mapping.get("target_dir", ""),
-            self.current_mapping.get("path_replace", "")
-        )
+    def __computed_target_path(self, path: AlistFile, source_dir: str, target_dir: str) -> Path:
+        """
+        计算strm文件保存路径。
+
+        :param path: AlistFile 对象
+        :param source_dir: 当前处理的源目录
+        :param target_dir: 当前处理的目标目录
+        :return: 本地文件路径,如果是媒体文件，则返回 .strm 后缀
+        """
+        return self.__cached_computed_target_path(path.path, path.suffix, source_dir, target_dir)
 
     @lru_cache(maxsize=10000)
-    def __cached_computed_target_path(self, path: str, suffix: str, source_dir: str, target_dir: str, path_replace: str) -> Path:
+    def __cached_computed_target_path(self, path: str, suffix: str, source_dir: str, target_dir: str) -> Path:
+        # 使用当前映射的源目录和目标目录计算路径
         target_path = Path(target_dir) / path.replace(
-            source_dir, path_replace, 1
+            source_dir, self._path_replace, 1
         ).lstrip("/")
 
         # 检查是否需要生成strm文件（非字幕文件）
@@ -417,23 +380,26 @@ class Alist2Strm(_PluginBase):
         return target_path
 
     def __update_config(self) -> None:
-        """更新插件配置"""
+        """
+        更新插件配置。
+        """
         self.update_config(
             {
                 "enabled": self._enabled,
                 "onlyonce": False,
                 "url": self._url,
                 "token": self._token,
-                "dir_mappings": self._dir_mappings,
+                "dir_mappings": self._dir_mappings,  # 保存目录映射配置
                 "sync_remote": self._sync_remote,
                 "cron": self._cron,
+                "path_replace": self._path_replace,
                 "url_replace": self._url_replace,
                 "max_download_worker": self._max_download_worker,
                 "max_list_worker": self._max_list_worker,
                 "max_depth": self._max_depth,
                 "traversal_mode": self._traversal_mode,
                 "filter_mode": self._filter_mode,
-                # 文件类型配置
+                # 新增：保存文件类型配置
                 "video_enabled": self._video_enabled,
                 "audio_enabled": self._audio_enabled,
                 "other_enabled": self._other_enabled,
@@ -444,16 +410,24 @@ class Alist2Strm(_PluginBase):
         )
 
     def get_state(self) -> bool:
-        """检查插件是否满足运行条件"""
-        mappings = self._parse_dir_mappings()
+        # 检查是否配置了有效的目录映射
         return (
             True
-            if self._enabled and self._cron and self._token and self._url and mappings
+            if self._enabled and self._cron and self._token and self._url and self._parse_dir_mappings()
             else False
         )
 
     def get_service(self) -> List[Dict[str, Any]]:
-        """注册插件公共服务"""
+        """
+        注册插件公共服务
+        [{
+            "id": "服务ID",
+            "name": "服务名称",
+            "trigger": "触发器：cron/interval/date/CronTrigger.from_crontab()",
+            "func": self.xxx,
+            "kwargs": {} # 定时器参数
+        }]
+        """
         if self.get_state():
             return [
                 {
@@ -474,7 +448,9 @@ class Alist2Strm(_PluginBase):
         pass
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        """拼装插件配置页面"""
+        """
+        拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
+        """
         return (
             [
                 {
@@ -569,38 +545,7 @@ class Alist2Strm(_PluginBase):
                                         }
                                     ],
                                 },
-                            ],
-                        },
-                        # 核心修改：单行映射配置
-                        {
-                            "component": "VRow",
-                            "content": [
-                                {
-                                    "component": "VCol",
-                                    "props": {"cols": 12},
-                                    "content": [
-                                        {
-                                            "component": "VSubheader",
-                                            "props": {"title": "目录映射配置（多行，每行一个映射）"},
-                                        },
-                                        {
-                                            "component": "VAlert",
-                                            "props": {
-                                                "type": "info",
-                                                "variant": "tonal",
-                                                "text": "格式说明：每行格式为 同步源根目录#本地保存根目录[#路径替换]，路径替换可选",
-                                            },
-                                        },
-                                        {
-                                            "component": "VAlert",
-                                            "props": {
-                                                "type": "success",
-                                                "variant": "tonal",
-                                                "text": "示例：\n/movie#/local/movie\n/tv#/local/tv#tv_path\n/music#/local/music",
-                                            },
-                                        }
-                                    ]
-                                },
+                                # 目录映射配置，替换原来的source_dir和target_dir
                                 {
                                     "component": "VCol",
                                     "props": {"cols": 12},
@@ -610,18 +555,27 @@ class Alist2Strm(_PluginBase):
                                             "props": {
                                                 "model": "dir_mappings",
                                                 "label": "目录映射",
-                                                "placeholder": "/movie#/local/movie\n/tv#/local/tv\n/music#/local/music",
-                                                "rows": 5,
-                                                "hint": "每行一个映射关系，使用#分隔源目录和目标目录，支持可选的路径替换",
+                                                "placeholder": "/alist/movies#/local/movies\n/alist/tv#/local/tv",
+                                                "rows": 4,
+                                                "hint": "每行一个映射，格式：同步源根目录#本地保存根目录，例如：/影视#/data/影视",
                                             },
                                         }
                                     ],
                                 },
-                            ],
-                        },
-                        {
-                            "component": "VRow",
-                            "content": [
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VTextField",
+                                            "props": {
+                                                "model": "path_replace",
+                                                "label": "目的路径替换",
+                                                "placeholder": "source_path -> replace_path",
+                                            },
+                                        }
+                                    ],
+                                },
                                 {
                                     "component": "VCol",
                                     "props": {"cols": 12, "md": 4},
@@ -662,11 +616,6 @@ class Alist2Strm(_PluginBase):
                                         }
                                     ],
                                 },
-                            ],
-                        },
-                        {
-                            "component": "VRow",
-                            "content": [
                                 {
                                     "component": "VCol",
                                     "props": {"cols": 12, "md": 4},
@@ -733,7 +682,7 @@ class Alist2Strm(_PluginBase):
                                 },
                             ],
                         },
-                        # 文件类型配置区域
+                        # 新增：文件类型配置区域
                         {
                             "component": "VRow",
                             "content": [
@@ -759,7 +708,7 @@ class Alist2Strm(_PluginBase):
                                                 "label": "启用视频STRM生成",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                                 {
                                     "component": "VCol",
@@ -774,7 +723,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                                 # 音频文件配置
                                 {
@@ -788,7 +737,7 @@ class Alist2Strm(_PluginBase):
                                                 "label": "启用音频STRM生成",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                                 {
                                     "component": "VCol",
@@ -803,7 +752,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                                 # 其他文件配置
                                 {
@@ -817,7 +766,7 @@ class Alist2Strm(_PluginBase):
                                                 "label": "启用其他文件STRM生成",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                                 {
                                     "component": "VCol",
@@ -832,7 +781,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ],
+                                    ]
                                 },
                             ],
                         },
@@ -883,15 +832,15 @@ class Alist2Strm(_PluginBase):
                 "url": "",
                 "cron": "",
                 "token": "",
-                # 目录映射默认值
-                "dir_mappings": "",
+                "dir_mappings": "",  # 目录映射默认值
+                "path_replace": "",
                 "url_replace": "",
                 "max_list_worker": None,
                 "max_download_worker": None,
                 "max_depth": -1,
                 "traversal_mode": "bfs",
                 "filter_mode": "set",
-                # 文件类型配置默认值
+                # 新增：文件类型配置默认值
                 "video_enabled": True,
                 "audio_enabled": True,
                 "other_enabled": False,
@@ -905,7 +854,9 @@ class Alist2Strm(_PluginBase):
         pass
 
     def stop_service(self) -> None:
-        """退出插件"""
+        """
+        退出插件
+        """
         try:
             if self._scheduler:
                 self._scheduler.remove_all_jobs()
