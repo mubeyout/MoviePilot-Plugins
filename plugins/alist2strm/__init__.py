@@ -37,7 +37,7 @@ class Alist2Strm(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/yubanmeiqin9048/MoviePilot-Plugins/main/icons/Alist.png"
     # 插件版本
-    plugin_version = "1.8.4"
+    plugin_version = "1.8.5"
     # 插件作者
     plugin_author = "yubanmeiqin9048"
     # 作者主页
@@ -53,8 +53,10 @@ class Alist2Strm(_PluginBase):
     _enabled = False
     _url = ""
     _token = ""
-    # 修改：支持多目录映射
-    _dir_mappings: List[Dict[str, str]] = []
+    # 修改：支持多目录映射（用分隔符分割）
+    _source_dirs = ""
+    _target_dirs = ""
+    _path_replaces = ""
     _sync_remote = False
     _url_replace = ""
     _cron = ""
@@ -89,20 +91,10 @@ class Alist2Strm(_PluginBase):
             self._traversal_mode = config.get("traversal_mode") or "bfs"
             self._filter_mode = config.get("filter_mode") or "set"
             
-            # 修改：处理多目录映射配置
-            # 兼容旧配置（单目录）
-            self._dir_mappings = config.get("dir_mappings", [])
-            if not self._dir_mappings:
-                # 从旧的单值配置初始化
-                source_dir = config.get("source_dir", "")
-                target_dir = config.get("target_dir", "")
-                path_replace = config.get("path_replace", "")
-                if source_dir:
-                    self._dir_mappings = [{
-                        "source_dir": source_dir,
-                        "target_dir": target_dir,
-                        "path_replace": path_replace
-                    }]
+            # 修改：处理多目录映射配置（使用换行分隔）
+            self._source_dirs = config.get("source_dirs", config.get("source_dir", ""))
+            self._target_dirs = config.get("target_dirs", config.get("target_dir", ""))
+            self._path_replaces = config.get("path_replaces", config.get("path_replace", ""))
             
             # 新增：初始化文件类型配置
             self._video_enabled = config.get("video_enabled", True)
@@ -130,6 +122,31 @@ class Alist2Strm(_PluginBase):
                     self._scheduler.start()
             self.__update_config()
 
+    def _get_dir_mappings(self) -> List[Dict[str, str]]:
+        """解析多目录映射配置（按换行分割）"""
+        mappings = []
+        # 分割配置，处理空行
+        source_list = [s.strip() for s in self._source_dirs.split('\n') if s.strip()]
+        target_list = [t.strip() for t in self._target_dirs.split('\n') if t.strip()]
+        path_replace_list = [p.strip() for p in self._path_replaces.split('\n') if p.strip()]
+        
+        # 按最长的列表长度处理，不足的补空
+        max_len = max(len(source_list), len(target_list))
+        
+        for i in range(max_len):
+            source = source_list[i] if i < len(source_list) else ""
+            target = target_list[i] if i < len(target_list) else ""
+            path_replace = path_replace_list[i] if i < len(path_replace_list) else ""
+            
+            if source and target:  # 至少需要源目录和目标目录
+                mappings.append({
+                    "source_dir": source,
+                    "target_dir": target,
+                    "path_replace": path_replace
+                })
+        
+        return mappings
+
     def init_cleaner(self) -> None:
         """
         根据 filter_mode 实例化对应的 Cleaner。
@@ -142,11 +159,14 @@ class Alist2Strm(_PluginBase):
             use_cleaner = BloomCleaner
         else:
             raise ValueError(f"未知的过滤模式: {self._filter_mode}")
+        
         # 新增：更新需要处理的后缀列表
         self._process_file_suffix = self.__get_process_suffix() + ["strm"]
-        # 修改：支持多目录，需要为每个目录创建cleaner
+        
+        # 修改：支持多目录，为每个目录创建cleaner
         self.cleaners = {}
-        for mapping in self._dir_mappings:
+        mappings = self._get_dir_mappings()
+        for mapping in mappings:
             target_dir = Path(mapping.get("target_dir", ""))
             if target_dir:
                 self.cleaners[str(target_dir)] = use_cleaner(
@@ -181,7 +201,12 @@ class Alist2Strm(_PluginBase):
             logger.info("Alist2Strm 插件开始执行")
             
             # 修改：遍历处理每个目录映射
-            for mapping in self._dir_mappings:
+            mappings = self._get_dir_mappings()
+            if not mappings:
+                logger.warning("未配置有效的目录映射，插件执行终止")
+                return
+                
+            for mapping in mappings:
                 source_dir = mapping.get("source_dir", "")
                 target_dir = mapping.get("target_dir", "")
                 if not source_dir or not target_dir:
@@ -191,7 +216,20 @@ class Alist2Strm(_PluginBase):
                 # 初始化当前目录的清理器
                 cleaner_key = str(Path(target_dir))
                 if cleaner_key not in self.cleaners:
-                    continue
+                    # 如果cleaner不存在，动态创建
+                    if self._filter_mode == "set":
+                        use_cleaner = SetCleaner
+                    elif self._filter_mode == "io":
+                        use_cleaner = IoCleaner
+                    elif self._filter_mode == "bf":
+                        use_cleaner = BloomCleaner
+                    else:
+                        use_cleaner = SetCleaner
+                        
+                    self.cleaners[cleaner_key] = use_cleaner(
+                        need_suffix=self._process_file_suffix,
+                        target_dir=Path(target_dir),
+                    )
                     
                 self.current_cleaner = self.cleaners[cleaner_key]
                 self.current_mapping = mapping
@@ -395,8 +433,14 @@ class Alist2Strm(_PluginBase):
             "max_depth": self._max_depth,
             "traversal_mode": self._traversal_mode,
             "filter_mode": self._filter_mode,
-            # 修改：保存多目录映射
-            "dir_mappings": self._dir_mappings,
+            # 修改：保存多目录映射配置
+            "source_dirs": self._source_dirs,
+            "target_dirs": self._target_dirs,
+            "path_replaces": self._path_replaces,
+            # 兼容旧配置字段
+            "source_dir": self._source_dirs.split('\n')[0] if self._source_dirs else "",
+            "target_dir": self._target_dirs.split('\n')[0] if self._target_dirs else "",
+            "path_replace": self._path_replaces.split('\n')[0] if self._path_replaces else "",
             # 新增：保存文件类型配置
             "video_enabled": self._video_enabled,
             "audio_enabled": self._audio_enabled,
@@ -405,20 +449,14 @@ class Alist2Strm(_PluginBase):
             "audio_suffix": self._audio_suffix,
             "other_suffix": self._other_suffix,
         }
-        # 兼容旧配置，保留原有字段
-        if self._dir_mappings:
-            first_mapping = self._dir_mappings[0]
-            config.update({
-                "source_dir": first_mapping.get("source_dir", ""),
-                "target_dir": first_mapping.get("target_dir", ""),
-                "path_replace": first_mapping.get("path_replace", ""),
-            })
         self.update_config(config)
 
     def get_state(self) -> bool:
+        """检查插件是否满足运行条件"""
+        mappings = self._get_dir_mappings()
         return (
             True
-            if self._enabled and self._cron and self._token and self._url and self._dir_mappings
+            if self._enabled and self._cron and self._token and self._url and mappings
             else False
         )
 
@@ -550,6 +588,75 @@ class Alist2Strm(_PluginBase):
                                         }
                                     ],
                                 },
+                            ],
+                        },
+                        # 恢复：目录映射配置（多行文本框）
+                        {
+                            "component": "VRow",
+                            "content": [
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12},
+                                    "content": [
+                                        {
+                                            "component": "VSubheader",
+                                            "props": {"title": "目录映射配置（支持多行，每行对应一组映射）"},
+                                        }
+                                    ]
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VTextarea",
+                                            "props": {
+                                                "model": "source_dirs",
+                                                "label": "同步源根目录",
+                                                "placeholder": "/movie\n/tv\n/music",
+                                                "rows": 3,
+                                                "hint": "每行一个目录，与目标目录一一对应",
+                                            },
+                                        }
+                                    ],
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VTextarea",
+                                            "props": {
+                                                "model": "target_dirs",
+                                                "label": "本地保存根目录",
+                                                "placeholder": "/local/movie\n/local/tv\n/local/music",
+                                                "rows": 3,
+                                                "hint": "每行一个目录，与源目录一一对应",
+                                            },
+                                        }
+                                    ],
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VTextarea",
+                                            "props": {
+                                                "model": "path_replaces",
+                                                "label": "目的路径替换",
+                                                "placeholder": "movie\n tv\nmusic",
+                                                "rows": 3,
+                                                "hint": "每行一个替换规则，与源目录一一对应（可选）",
+                                            },
+                                        }
+                                    ],
+                                },
+                            ],
+                        },
+                        {
+                            "component": "VRow",
+                            "content": [
                                 {
                                     "component": "VCol",
                                     "props": {"cols": 12, "md": 4},
@@ -590,6 +697,11 @@ class Alist2Strm(_PluginBase):
                                         }
                                     ],
                                 },
+                            ],
+                        },
+                        {
+                            "component": "VRow",
+                            "content": [
                                 {
                                     "component": "VCol",
                                     "props": {"cols": 12, "md": 4},
@@ -656,57 +768,6 @@ class Alist2Strm(_PluginBase):
                                 },
                             ],
                         },
-                        # 新增：多目录映射配置区域
-                        {
-                            "component": "VRow",
-                            "content": [
-                                {
-                                    "component": "VCol",
-                                    "props": {"cols": 12},
-                                    "content": [
-                                        {
-                                            "component": "VSubheader",
-                                            "props": {"title": "目录映射配置（支持多组）"},
-                                        },
-                                        {
-                                            "component": "VDynamicInput",
-                                            "props": {
-                                                "model": "dir_mappings",
-                                                "columns": [
-                                                    {
-                                                        "title": "同步源根目录",
-                                                        "key": "source_dir",
-                                                        "component": "VTextField",
-                                                        "props": {
-                                                            "placeholder": "/source_path",
-                                                        }
-                                                    },
-                                                    {
-                                                        "title": "本地保存根目录",
-                                                        "key": "target_dir",
-                                                        "component": "VTextField",
-                                                        "props": {
-                                                            "placeholder": "/target_path",
-                                                        }
-                                                    },
-                                                    {
-                                                        "title": "目的路径替换",
-                                                        "key": "path_replace",
-                                                        "component": "VTextField",
-                                                        "props": {
-                                                            "placeholder": "source_path -> replace_path",
-                                                        }
-                                                    }
-                                                ],
-                                                "addButtonText": "添加目录映射",
-                                                "deleteButtonText": "删除",
-                                                "minItems": 1,
-                                            }
-                                        }
-                                    ]
-                                }
-                            ]
-                        },
                         # 新增：文件类型配置区域
                         {
                             "component": "VRow",
@@ -748,7 +809,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ]
+                                    ],
                                 },
                                 # 音频文件配置
                                 {
@@ -777,7 +838,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ]
+                                    ],
                                 },
                                 # 其他文件配置
                                 {
@@ -806,7 +867,7 @@ class Alist2Strm(_PluginBase):
                                                 "hint": "多个后缀用逗号分隔",
                                             },
                                         }
-                                    ]
+                                    ],
                                 },
                             ],
                         },
@@ -840,7 +901,7 @@ class Alist2Strm(_PluginBase):
                                             "props": {
                                                 "type": "info",
                                                 "variant": "tonal",
-                                                "text": "建议配合响应时间和QPS设置线程",
+                                                "text": "多目录映射使用说明：每行配置一个目录，三组配置的行一一对应，空行会被忽略",
                                             },
                                         }
                                     ],
@@ -857,24 +918,20 @@ class Alist2Strm(_PluginBase):
                 "url": "",
                 "cron": "",
                 "token": "",
-                # 修改：默认多目录映射配置
-                "dir_mappings": [
-                    {
-                        "source_dir": "",
-                        "target_dir": "",
-                        "path_replace": ""
-                    }
-                ],
+                # 恢复：目录映射默认配置（多行文本框）
+                "source_dirs": "",
+                "target_dirs": "",
+                "path_replaces": "",
+                # 兼容旧配置字段
+                "source_dir": "",
+                "target_dir": "",
+                "path_replace": "",
                 "url_replace": "",
                 "max_list_worker": None,
                 "max_download_worker": None,
                 "max_depth": -1,
                 "traversal_mode": "bfs",
                 "filter_mode": "set",
-                # 兼容旧配置字段
-                "source_dir": "",
-                "target_dir": "",
-                "path_replace": "",
                 # 新增：文件类型配置默认值
                 "video_enabled": True,
                 "audio_enabled": True,
