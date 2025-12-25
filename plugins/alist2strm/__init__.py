@@ -31,15 +31,15 @@ from plugins.alist2strm.filter import BloomCleaner, IoCleaner, SetCleaner
 
 class Alist2Strm(_PluginBase):
     # 插件名称
-    plugin_name = "Alist2Strm"
+    plugin_name = "AList2Strm(高级版)"
     # 插件描述
-    plugin_desc = "从alist生成strm。"
+    plugin_desc = "从alist生成strm(自定义格式)。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/yubanmeiqin9048/MoviePilot-Plugins/main/icons/Alist.png"
     # 插件版本
-    plugin_version = "1.8.3"
+    plugin_version = "2.0"
     # 插件作者
-    plugin_author = "yubanmeiqin9048"
+    plugin_author = "mubey"
     # 作者主页
     author_url = "https://github.com/yubanmeiqin9048"
     # 插件配置项ID前缀
@@ -61,7 +61,13 @@ class Alist2Strm(_PluginBase):
     _cron = ""
     _scheduler = None
     _onlyonce = False
-    _process_file_suffix = settings.RMT_SUBEXT + settings.RMT_MEDIAEXT
+    # 新增：文件类型配置相关属性
+    _video_enabled = True
+    _audio_enabled = True
+    _other_enabled = False
+    _video_suffix = settings.RMT_MEDIAEXT
+    _audio_suffix = ".mp3,.flac,.wav,.ogg,.aac,.m4a"
+    _other_suffix = ".iso,.img,.bin"
     _max_download_worker = 3
     _max_list_worker = 7
     _max_depth = -1
@@ -86,6 +92,13 @@ class Alist2Strm(_PluginBase):
             self._max_depth = config.get("max_depth") or -1
             self._traversal_mode = config.get("traversal_mode") or "bfs"
             self._filter_mode = config.get("filter_mode") or "set"
+            # 新增：初始化文件类型配置
+            self._video_enabled = config.get("video_enabled", True)
+            self._audio_enabled = config.get("audio_enabled", True)
+            self._other_enabled = config.get("other_enabled", False)
+            self._video_suffix = config.get("video_suffix", ",".join(settings.RMT_MEDIAEXT))
+            self._audio_suffix = config.get("audio_suffix", ".mp3,.flac,.wav,.ogg,.aac,.m4a")
+            self._other_suffix = config.get("other_suffix", ".iso,.img,.bin")
             self.init_cleaner()
             self.__update_config()
 
@@ -117,10 +130,28 @@ class Alist2Strm(_PluginBase):
             use_cleaner = BloomCleaner
         else:
             raise ValueError(f"未知的过滤模式: {self._filter_mode}")
+        # 新增：更新需要处理的后缀列表
+        self._process_file_suffix = self.__get_process_suffix() + ["strm"]
         self.cleaner = use_cleaner(
-            need_suffix=self._process_file_suffix + ["strm"],
+            need_suffix=self._process_file_suffix,
             target_dir=Path(self._target_dir),
         )
+
+    def __get_process_suffix(self) -> List[str]:
+        """获取需要处理的文件后缀列表"""
+        suffix_list = []
+        # 处理视频后缀
+        if self._video_enabled and self._video_suffix:
+            suffix_list.extend([s.lower().strip() for s in self._video_suffix.split(',') if s.strip()])
+        # 处理音频后缀
+        if self._audio_enabled and self._audio_suffix:
+            suffix_list.extend([s.lower().strip() for s in self._audio_suffix.split(',') if s.strip()])
+        # 处理其他后缀
+        if self._other_enabled and self._other_suffix:
+            suffix_list.extend([s.lower().strip() for s in self._other_suffix.split(',') if s.strip()])
+        # 添加上字幕后缀
+        suffix_list.extend(settings.RMT_SUBEXT)
+        return list(set(suffix_list))
 
     def run_in_scheduler(self) -> None:
         asyncio.run(self.alist2strm())
@@ -131,6 +162,8 @@ class Alist2Strm(_PluginBase):
             self.__max_list_sem = asyncio.Semaphore(self._max_list_worker)
             self.__iter_tasks_done = asyncio.Event()
             logger.info("Alist2Strm 插件开始执行")
+            # 重新初始化清理器以应用最新的后缀配置
+            self.init_cleaner()
             await self.cleaner.init_cleaner()
             await self.__process()
             logger.info("Alist2Strm 插件执行完成")
@@ -140,7 +173,22 @@ class Alist2Strm(_PluginBase):
             )
 
     def __filter_func(self, remote_path: AlistFile) -> bool:
-        if remote_path.suffix.lower() not in self._process_file_suffix:
+        # 检查是否是字幕文件
+        if remote_path.suffix.lower() in settings.RMT_SUBEXT:
+            return True
+            
+        # 检查是否是视频/音频/其他文件并启用
+        suffix = remote_path.suffix.lower()
+        video_suffix = [s.lower() for s in self._video_suffix.split(',') if s.strip()]
+        audio_suffix = [s.lower() for s in self._audio_suffix.split(',') if s.strip()]
+        other_suffix = [s.lower() for s in self._other_suffix.split(',') if s.strip()]
+        
+        # 检查文件类型是否启用且后缀匹配
+        if (self._video_enabled and suffix in video_suffix) or \
+           (self._audio_enabled and suffix in audio_suffix) or \
+           (self._other_enabled and suffix in other_suffix):
+            pass  # 符合条件，继续处理
+        else:
             logger.info(f"文件类型 {remote_path.path} 不在处理列表中")
             return False
 
@@ -282,7 +330,8 @@ class Alist2Strm(_PluginBase):
             self._source_dir, self._path_replace, 1
         ).lstrip("/")
 
-        if suffix.lower() in settings.RMT_MEDIAEXT:
+        # 检查是否需要生成strm文件（非字幕文件）
+        if suffix.lower() not in settings.RMT_SUBEXT:
             target_path = target_path.with_suffix(".strm")
 
         return target_path
@@ -308,6 +357,13 @@ class Alist2Strm(_PluginBase):
                 "max_depth": self._max_depth,
                 "traversal_mode": self._traversal_mode,
                 "filter_mode": self._filter_mode,
+                # 新增：保存文件类型配置
+                "video_enabled": self._video_enabled,
+                "audio_enabled": self._audio_enabled,
+                "other_enabled": self._other_enabled,
+                "video_suffix": self._video_suffix,
+                "audio_suffix": self._audio_suffix,
+                "other_suffix": self._other_suffix,
             }
         )
 
@@ -594,6 +650,109 @@ class Alist2Strm(_PluginBase):
                                 },
                             ],
                         },
+                        # 新增：文件类型配置区域
+                        {
+                            "component": "VRow",
+                            "content": [
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12},
+                                    "content": [
+                                        {
+                                            "component": "VSubheader",
+                                            "props": {"title": "文件类型配置"},
+                                        }
+                                    ]
+                                },
+                                # 视频文件配置
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VSwitch",
+                                            "props": {
+                                                "model": "video_enabled",
+                                                "label": "启用视频STRM生成",
+                                            },
+                                        }
+                                    ]
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 8},
+                                    "content": [
+                                        {
+                                            "component": "VTextField",
+                                            "props": {
+                                                "model": "video_suffix",
+                                                "label": "视频文件后缀",
+                                                "placeholder": "例如: .mp4,.mkv,.avi",
+                                                "hint": "多个后缀用逗号分隔",
+                                            },
+                                        }
+                                    ]
+                                },
+                                # 音频文件配置
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VSwitch",
+                                            "props": {
+                                                "model": "audio_enabled",
+                                                "label": "启用音频STRM生成",
+                                            },
+                                        }
+                                    ]
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 8},
+                                    "content": [
+                                        {
+                                            "component": "VTextField",
+                                            "props": {
+                                                "model": "audio_suffix",
+                                                "label": "音频文件后缀",
+                                                "placeholder": "例如: .mp3,.flac,.wav",
+                                                "hint": "多个后缀用逗号分隔",
+                                            },
+                                        }
+                                    ]
+                                },
+                                # 其他文件配置
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 4},
+                                    "content": [
+                                        {
+                                            "component": "VSwitch",
+                                            "props": {
+                                                "model": "other_enabled",
+                                                "label": "启用其他文件STRM生成",
+                                            },
+                                        }
+                                    ]
+                                },
+                                {
+                                    "component": "VCol",
+                                    "props": {"cols": 12, "md": 8},
+                                    "content": [
+                                        {
+                                            "component": "VTextField",
+                                            "props": {
+                                                "model": "other_suffix",
+                                                "label": "其他文件后缀",
+                                                "placeholder": "例如: .iso,.img,.bin",
+                                                "hint": "多个后缀用逗号分隔",
+                                            },
+                                        }
+                                    ]
+                                },
+                            ],
+                        },
                         {
                             "component": "VRow",
                             "content": [
@@ -650,6 +809,13 @@ class Alist2Strm(_PluginBase):
                 "max_depth": -1,
                 "traversal_mode": "bfs",
                 "filter_mode": "set",
+                # 新增：文件类型配置默认值
+                "video_enabled": True,
+                "audio_enabled": True,
+                "other_enabled": False,
+                "video_suffix": ",".join(settings.RMT_MEDIAEXT),
+                "audio_suffix": ".mp3,.flac,.wav,.ogg,.aac,.m4a",
+                "other_suffix": ".iso,.img,.bin",
             },
         )
 
