@@ -34,7 +34,7 @@
         "description": "通过Metatube API识别番号媒体信息。",
         "labels": "识别",
         "version": "1.0.1",
-        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
+        "icon": "Metatube.png",
         "author": "Mubey",
         "level": 1,
         "history": {
