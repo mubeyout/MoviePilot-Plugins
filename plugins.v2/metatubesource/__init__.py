@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app import schemas
 from app.chain import ChainBase
+from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event
 from app.core.meta import MetaBase
@@ -19,7 +20,7 @@ class MetatubeSource(_PluginBase):
     # 插件描述
     plugin_desc = "通过Metatube API识别番号媒体信息。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
+    plugin_icon = "Metatube.png"
     # 插件版本
     plugin_version = "1.0.0"
     # 插件作者
@@ -31,7 +32,7 @@ class MetatubeSource(_PluginBase):
     # 加载顺序
     plugin_order = 23
     # 可使用的用户级别
-    auth_level = 2
+    auth_level = 1
 
     # 插件配置
     _enabled: bool = False
@@ -45,7 +46,7 @@ class MetatubeSource(_PluginBase):
     _original_async_method: Optional = None
 
     def init_plugin(self, config: dict = None):
-        plugin_instance = MetatubeSource
+        plugin_instance: MetatubeSource = self
 
         def patched_recognize_media(chain_self, meta: MetaBase = None,
                                     mtype: Optional[MediaType] = None,
@@ -100,7 +101,6 @@ class MetatubeSource(_PluginBase):
             self._update_config()
 
         # 初始化 Metatube Helper
-        from app.core.config import settings
         self._metatube_helper = MetatubeHelper(
             api_url=self._api_url,
             proxies=settings.PROXY if self._proxy else None
