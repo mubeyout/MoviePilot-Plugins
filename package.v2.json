@@ -1,4 +1,17 @@
 {
+   
+      "metatubesource": {
+        "name": "Metatube源",
+        "description": "通过Metatube API识别番号媒体信息。",
+        "labels": "识别",
+        "version": "1.0.0",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
+        "author": "Mubey",
+        "level": 2,
+        "history": {
+            "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
+        }
+    },
     "ShortCutModified": {
         "name": "修改版快捷指令",
         "description": "IOS快捷指令，快速选片添加订阅。",
