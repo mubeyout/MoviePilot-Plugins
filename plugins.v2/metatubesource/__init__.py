@@ -46,6 +46,8 @@ class MetatubeSource(_PluginBase):
     _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
 
     def init_plugin(self, config: dict = None):
+        logger.info(f"{self.plugin_name} 插件初始化...")
+
         plugin_instance: MetatubeSource = self
 
         def patched_recognize_media(chain_self, meta: MetaBase = None,
@@ -93,12 +95,25 @@ class MetatubeSource(_PluginBase):
         if not getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self):
             self._original_async_method = getattr(ChainBase, "async_recognize_media", None)
 
+        # 设置默认值
+        self._enabled = False
+        self._api_url = "http://op.mubey.top:3244"
+        self._proxy = False
+        self._recognize_media = False
+
+        # 加载配置
         if config:
-            self._enabled = bool(config.get("enabled"))
+            self._enabled = bool(config.get("enabled", False))
             self._api_url = config.get("api_url") or "http://op.mubey.top:3244"
-            self._proxy = bool(config.get("proxy"))
-            self._recognize_media = bool(config.get("recognize_media"))
-            self._update_config()
+            self._proxy = bool(config.get("proxy", False))
+            self._recognize_media = bool(config.get("recognize_media", False))
+
+        logger.info(f"{self.plugin_name} 配置加载: enabled={self._enabled}, "
+                   f"api_url={self._api_url}, proxy={self._proxy}, "
+                   f"recognize_media={self._recognize_media}")
+
+        # 更新配置
+        self._update_config()
 
         # 初始化 Metatube Helper
         self._metatube_helper = MetatubeHelper(
@@ -113,6 +128,7 @@ class MetatubeSource(_PluginBase):
             # 替换 ChainBase.async_recognize_media
             if not getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self):
                 ChainBase.async_recognize_media = patched_async_recognize_media
+            logger.info(f"{self.plugin_name} 已启用媒体识别功能")
         else:
             self.stop_service()
 
