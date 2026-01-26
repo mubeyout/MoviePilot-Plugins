@@ -33,11 +33,12 @@
         "name": "Metatube源",
         "description": "通过Metatube API识别番号媒体信息。",
         "labels": "识别",
-        "version": "1.0.0",
-        "icon": "Metatube.png",
+        "version": "1.0.1",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
         "author": "Mubey",
         "level": 1,
         "history": {
+            "v1.0.1": "优化插件配置和识别功能",
             "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
         }
     }
