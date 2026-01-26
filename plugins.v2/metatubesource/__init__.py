@@ -1,6 +1,6 @@
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Coroutine, Dict, List, Optional, Tuple
 
 from app import schemas
 from app.chain import ChainBase
@@ -20,9 +20,9 @@ class MetatubeSource(_PluginBase):
     # 插件描述
     plugin_desc = "通过Metatube API识别番号媒体信息。"
     # 插件图标
-    plugin_icon = "Metatube.png"
+    plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     # 插件作者
     plugin_author = "Mubey"
     # 作者主页
@@ -42,8 +42,8 @@ class MetatubeSource(_PluginBase):
 
     # 私有属性
     _metatube_helper: MetatubeHelper = None
-    _original_method: Optional = None
-    _original_async_method: Optional = None
+    _original_method: Optional[Callable] = None
+    _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
 
     def init_plugin(self, config: dict = None):
         plugin_instance: MetatubeSource = self
