@@ -20,13 +20,13 @@ class MetatubeSource(_PluginBase):
     # 插件描述
     plugin_desc = "通过Metatube API识别番号媒体信息。"
     # 插件图标
-    plugin_icon = "Metatube.png"
+    plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
     # 插件版本
     plugin_version = "1.0.1"
     # 插件作者
-    plugin_author = "Mubey"
+    plugin_author = "mubey"
     # 作者主页
-    author_url = "https://github.com/Mubey"
+    author_url = "https://github.com/mubeyout"
     # 插件配置项ID前缀
     plugin_config_prefix = "metatubesource_"
     # 加载顺序

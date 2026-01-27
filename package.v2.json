@@ -5,7 +5,7 @@
         "labels": "代理,订阅",
         "version": "2.1.2",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Mihomo_Meta_A.png",
-        "author": "wumode",
+        "author": "MUBEY",
         "level": 1,
         "history": {
             "v2.1.2": "优化规则管理和订阅处理功能",
@@ -20,7 +20,7 @@
         "labels": "识别,探索,推荐",
         "version": "1.6.7",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/IMDb_IOS-OSX_App.png",
-        "author": "wumode",
+        "author": "MUBEY",
         "level": 1,
         "history": {
             "v1.6.7": "优化媒体识别和缓存机制",
@@ -34,12 +34,25 @@
         "description": "通过Metatube API识别番号媒体信息。",
         "labels": "识别",
         "version": "1.0.1",
-        "icon": "Metatube.png",
-        "author": "Mubey",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
+        "author": "MUBEY",
         "level": 1,
         "history": {
             "v1.0.1": "优化插件配置和识别功能",
             "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
+        }
+    },
+    "Alist2Strm": {
+        "name": "Alist2Strm",
+        "description": "从alist生成strm文件。",
+        "labels": "整理",
+        "version": "1.8.3",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Alist.png",
+        "author": "MUBEY",
+        "level": 2,
+        "v2": true,
+        "history": {
+            "v1.0": "初版"
         }
     }
 }
