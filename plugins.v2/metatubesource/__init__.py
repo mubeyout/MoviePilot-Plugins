@@ -38,31 +38,37 @@ class MetatubeSource(_PluginBase):
     # 可使用的用户级别
     auth_level = 1
 
-    # 内置关键字库
-    BUILT_IN_SERIES_KEYWORDS = [
-        # 日系关键词
+    # 内置关键字库（按分类组织）
+    # 日系关键词
+    BUILT_IN_JAPANESE_KEYWORDS = [
         "SSIS", "SONE", "MIDV", "STARS", "IPX", "CAWD", "SSIS", "MIDE",
         "JUL", "VENX", "ADN", "URE", "WAAA", "DLDSS", "JUQ", "MIMK",
         "FC2", "FC2-PPV", "HEYZO", "CARIB", "CARIBPR", "1PONDO",
         "PACOPACOMAMA", "H0930", "H4610", "C0930", "SKY", "RED",
         "MEYD", "MIAA", "ABW", "DOCP", "KTRA", "HMN", "MOODYZ",
         "OPUD", "KAWD", "OKAX", "SW", "SDMT", "SDDE", "SOE",
-        # 欧美系关键词
+        "一本道", "加勒比", "Tokyo-Hot", "红番区", "Caribbeancom",
+        "10musume", "Pcolle", "Gcolle", "Skyhigh", "Redhot", "JAV",
+        "AVOP", "AVOPEN", "JavHD", "Javbus"
+    ]
+
+    # 欧美系关键词
+    BUILT_IN_WESTERN_KEYWORDS = [
         "BRAZZERS", "NAUGHTY", "REALITYKINGS", "MOFOS", "TEENSLOVEBLACKCOCKS",
         "BLACKED", "BLACKEDRAW", "TUSHY", "TUSHYRAW", "VOYEURHIT",
         "VICAT", "XEV", "Missa", "PervMom", "SisLovesMe",
-        # 中文系关键词
+        "Pornhub", "Xvideos"
+    ]
+
+    # 中文系关键词
+    BUILT_IN_CHINESE_KEYWORDS = [
         "MD", "MX", "MDX", "PMC", "TM", "TW", "AV",
         "JK", "HT", "约炮", "网红", "探花", "大尺寸", "小宝寻花"
     ]
 
-    BUILT_IN_ADULT_KEYWORDS = [
-        # 通用特征
-        "高清", "无码", "有码", "中文字幕", "原声", "完整版", "流出", "泄露",
-        # 平台/系列标识
-        "Pornhub", "Xvideos", "Javbus", "一本道", "加勒比", "Tokyo-Hot",
-        "红番区", "一本道", "Caribbeancom", "10musume", "Pcolle", "Gcolle",
-        "Heyzo", "Skyhigh", "Redhot", "JavHD", "JAV", "AVOP", "AVOPEN"
+    # 其他关键词（通用特征）
+    BUILT_IN_OTHER_KEYWORDS = [
+        "高清", "无码", "有码", "中文字幕", "原声", "完整版", "流出", "泄露"
     ]
 
     # 插件配置
@@ -72,8 +78,11 @@ class MetatubeSource(_PluginBase):
     _timeout: int = 5
     _max_logs: int = 100
 
-    # 关键字相关配置
-    _custom_keywords: str = ""  # 自定义关键字
+    # 关键字相关配置（分类管理）
+    _custom_japanese_keywords: str = ""  # 自定义日系关键字
+    _custom_western_keywords: str = ""  # 自定义欧美系关键字
+    _custom_chinese_keywords: str = ""  # 自定义中文系关键字
+    _custom_other_keywords: str = ""  # 自定义其他关键字
     _strict_match: bool = False  # 是否严格匹配
 
     # 劫持模式专属配置
@@ -157,7 +166,10 @@ class MetatubeSource(_PluginBase):
             self._recognition_mode = config.get("recognition_mode") or ""
             self._timeout = int(config.get("timeout") or 5)
             self._max_logs = int(config.get("max_logs") or 100)
-            self._custom_keywords = config.get("custom_keywords") or ""
+            self._custom_japanese_keywords = config.get("custom_japanese_keywords") or ""
+            self._custom_western_keywords = config.get("custom_western_keywords") or ""
+            self._custom_chinese_keywords = config.get("custom_chinese_keywords") or ""
+            self._custom_other_keywords = config.get("custom_other_keywords") or ""
             self._strict_match = bool(config.get("strict_match") or False)
             self._hijack_fallback_system = bool(config.get("hijack_fallback_system") or False)
             self._keyword_failed_download = bool(config.get("keyword_failed_download") if config.get("keyword_failed_download") is not None else True)
@@ -342,13 +354,82 @@ class MetatubeSource(_PluginBase):
                                 "props": {"cols": 12},
                                 "content": [
                                     {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "自定义关键词配置（按分类管理）"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
                                         "component": "VTextarea",
                                         "props": {
-                                            "model": "custom_keywords",
-                                            "label": "自定义关键字",
-                                            "placeholder": "关键字1, 关键字2",
+                                            "model": "custom_japanese_keywords",
+                                            "label": "日系关键词",
+                                            "placeholder": "SSIS, FC2, HEYZO...",
                                             "rows": 2,
-                                            "hint": "逗号分隔，与内置关键字库共同生效"
+                                            "hint": "日系内容识别关键词，逗号分隔"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "custom_western_keywords",
+                                            "label": "欧美系关键词",
+                                            "placeholder": "BRAZZERS, BLACKED, TUSHY...",
+                                            "rows": 2,
+                                            "hint": "欧美系内容识别关键词，逗号分隔"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "custom_chinese_keywords",
+                                            "label": "中文系关键词",
+                                            "placeholder": "MD, 约炮, 探花...",
+                                            "rows": 2,
+                                            "hint": "中文系内容识别关键词，逗号分隔"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "custom_other_keywords",
+                                            "label": "其他关键词",
+                                            "placeholder": "高清, 无码, 有码...",
+                                            "rows": 2,
+                                            "hint": "其他通用特征关键词，逗号分隔"
                                         }
                                     }
                                 ]
@@ -449,11 +530,15 @@ class MetatubeSource(_PluginBase):
                                                     },
                                                     {
                                                         "component": "p",
-                                                        "text": "• 内置关键字库：包含常用番号前缀（日系、欧美系、中文系）和成人视频关键词"
+                                                        "text": "• 二级分类：自动识别内容类型并归类为「成人/日系」、「成人/欧美系」、「成人/中文系」、「成人/其他」"
                                                     },
                                                     {
                                                         "component": "p",
-                                                        "text": "• 自定义关键字：与内置关键字库共同生效"
+                                                        "text": "• 分类关键词：内置关键词库包含常用番号前缀和平台标识，可按需自定义各分类关键词"
+                                                    },
+                                                    {
+                                                        "component": "p",
+                                                        "text": "• 优先级：日系 > 欧美系 > 中文系 > 其他（匹配到第一个即停止）"
                                                     }
                                                 ]
                                             }
@@ -471,7 +556,10 @@ class MetatubeSource(_PluginBase):
             "recognition_mode": "",
             "timeout": 5,
             "max_logs": 100,
-            "custom_keywords": "",
+            "custom_japanese_keywords": "",
+            "custom_western_keywords": "",
+            "custom_chinese_keywords": "",
+            "custom_other_keywords": "",
             "strict_match": False,
             "hijack_fallback_system": False,
             "keyword_failed_download": True,
@@ -480,6 +568,9 @@ class MetatubeSource(_PluginBase):
 
     def get_page(self) -> List[dict]:
         """插件详情页面 - 日志查看"""
+        # 获取当前日志
+        logs_data = self.get_logs()
+
         return [
             {
                 "component": "VCard",
@@ -507,8 +598,9 @@ class MetatubeSource(_PluginBase):
                                 "text": "刷新",
                                 "events": {
                                     "click": {
-                                        "api": "plugin/MetatubeSource/logs",
-                                        "method": "get"
+                                        "action": "refresh",
+                                        "api": "/plugin/v1/metatubesource/logs",
+                                        "method": "GET"
                                     }
                                 }
                             },
@@ -522,9 +614,9 @@ class MetatubeSource(_PluginBase):
                                 "text": "清空",
                                 "events": {
                                     "click": {
-                                        "api": "plugin/MetatubeSource/clear_logs",
-                                        "method": "post",
-                                        "params": {}
+                                        "action": "submit",
+                                        "api": "/plugin/v1/metatubesource/clear_logs",
+                                        "method": "POST"
                                     }
                                 }
                             }
@@ -630,7 +722,10 @@ class MetatubeSource(_PluginBase):
             "recognition_mode": self._recognition_mode,
             "timeout": self._timeout,
             "max_logs": self._max_logs,
-            "custom_keywords": self._custom_keywords,
+            "custom_japanese_keywords": self._custom_japanese_keywords,
+            "custom_western_keywords": self._custom_western_keywords,
+            "custom_chinese_keywords": self._custom_chinese_keywords,
+            "custom_other_keywords": self._custom_other_keywords,
             "strict_match": self._strict_match,
             "hijack_fallback_system": self._hijack_fallback_system,
             "keyword_failed_download": self._keyword_failed_download,
@@ -655,18 +750,70 @@ class MetatubeSource(_PluginBase):
         """获取所有关键字（内置 + 自定义）"""
         keywords = []
 
-        # 添加内置系列关键字
-        keywords.extend(self.BUILT_IN_SERIES_KEYWORDS)
-
-        # 添加内置成人视频关键字
-        keywords.extend(self.BUILT_IN_ADULT_KEYWORDS)
+        # 添加所有分类的内置关键字
+        keywords.extend(self.BUILT_IN_JAPANESE_KEYWORDS)
+        keywords.extend(self.BUILT_IN_WESTERN_KEYWORDS)
+        keywords.extend(self.BUILT_IN_CHINESE_KEYWORDS)
+        keywords.extend(self.BUILT_IN_OTHER_KEYWORDS)
 
         # 添加自定义关键字
-        if self._custom_keywords:
-            custom_list = [kw.strip() for kw in self._custom_keywords.split(',') if kw.strip()]
+        if self._custom_japanese_keywords:
+            custom_list = [kw.strip() for kw in self._custom_japanese_keywords.split(',') if kw.strip()]
+            keywords.extend(custom_list)
+        if self._custom_western_keywords:
+            custom_list = [kw.strip() for kw in self._custom_western_keywords.split(',') if kw.strip()]
+            keywords.extend(custom_list)
+        if self._custom_chinese_keywords:
+            custom_list = [kw.strip() for kw in self._custom_chinese_keywords.split(',') if kw.strip()]
+            keywords.extend(custom_list)
+        if self._custom_other_keywords:
+            custom_list = [kw.strip() for kw in self._custom_other_keywords.split(',') if kw.strip()]
             keywords.extend(custom_list)
 
         return list(set(keywords))  # 去重
+
+    def _detect_category_type(self, title: str) -> str:
+        """
+        检测标题匹配的关键字类型，返回二级分类名称
+
+        :param title: 标题文本
+        :return: 二级分类名称：日系/欧美系/中文系/其他
+        """
+        if not title:
+            return "其他"
+
+        # 标准化标题
+        search_title = title
+        if not self._strict_match:
+            search_title = title.upper()
+            search_title = search_title.replace('－', '-').replace('＿', '_')
+
+        # 按优先级检测：日系 > 欧美系 > 中文系 > 其他
+        categories = [
+            ("日系", self.BUILT_IN_JAPANESE_KEYWORDS, self._custom_japanese_keywords),
+            ("欧美系", self.BUILT_IN_WESTERN_KEYWORDS, self._custom_western_keywords),
+            ("中文系", self.BUILT_IN_CHINESE_KEYWORDS, self._custom_chinese_keywords),
+            ("其他", self.BUILT_IN_OTHER_KEYWORDS, self._custom_other_keywords),
+        ]
+
+        for category_name, built_in_keywords, custom_keywords in categories:
+            # 检查内置关键字
+            for keyword in built_in_keywords:
+                search_keyword = keyword.upper() if not self._strict_match else keyword
+                if search_keyword in search_title:
+                    logger.debug(f"Metatube: 匹配到{category_name}关键字 '{keyword}' 在标题 '{title}' 中")
+                    return category_name
+
+            # 检查自定义关键字
+            if custom_keywords:
+                custom_list = [kw.strip() for kw in custom_keywords.split(',') if kw.strip()]
+                for keyword in custom_list:
+                    search_keyword = keyword.upper() if not self._strict_match else keyword
+                    if search_keyword in search_title:
+                        logger.debug(f"Metatube: 匹配到{category_name}自定义关键字 '{keyword}' 在标题 '{title}' 中")
+                        return category_name
+
+        return "其他"
 
     def _match_keywords(self, meta: MetaBase) -> bool:
         """
@@ -780,8 +927,14 @@ class MetatubeSource(_PluginBase):
             if detail.images:
                 mediainfo.backdrop_path = detail.images[0] if detail.images else mediainfo.backdrop_path
 
-        # 设置分类为"成人"
-        mediainfo.set_category("成人")
+        # 检测二级分类
+        title = movie.title or movie.number or ""
+        subcategory = self._detect_category_type(title)
+        category = f"成人/{subcategory}"
+
+        # 设置分类（使用二级分类）
+        mediainfo.set_category(category)
+        logger.info(f"Metatube: 分类设置为 '{category}' (基于标题: {title})")
 
         return mediainfo
 
@@ -824,17 +977,20 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, "", "failed", failure_msg)
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
-                # 关键字触发模式：识别失败直接归类为"成人"并返回
+                # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
                 if self._recognition_mode == 'keyword' and self._keyword_failed_download:
-                    logger.info(f"Metatube: 关键字触发模式识别失败，归类为'成人'分类")
+                    # 检测分类
+                    subcategory = self._detect_category_type(number)
+                    category = f"成人/{subcategory}"
+                    logger.info(f"Metatube: 关键字触发模式识别失败，归类为'{category}'分类")
                     mediainfo = MediaInfo()
                     mediainfo.source = 'metatube'
                     mediainfo.type = MediaType.MOVIE
                     mediainfo.title = number
                     mediainfo.original_title = number
                     mediainfo.imdb_id = number
-                    mediainfo.set_category("成人")
-                    self._add_log(number, number, "success", "识别失败但已归类为成人")
+                    mediainfo.set_category(category)
+                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory)
                     return mediainfo
 
                 return None
@@ -865,17 +1021,20 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, "", "failed", failure_msg)
             logger.error(f"Metatube: 识别异常 - {str(e)}")
 
-            # 关键字触发模式：识别失败直接归类为"成人"并返回
+            # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
             if self._recognition_mode == 'keyword' and self._keyword_failed_download:
-                logger.info(f"Metatube: 关键字触发模式识别异常，归类为'成人'分类")
+                # 检测分类
+                subcategory = self._detect_category_type(number)
+                category = f"成人/{subcategory}"
+                logger.info(f"Metatube: 关键字触发模式识别异常，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'metatube'
                 mediainfo.type = MediaType.MOVIE
                 mediainfo.title = number
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
-                mediainfo.set_category("成人")
-                self._add_log(number, number, "success", "识别异常但已归类为成人")
+                mediainfo.set_category(category)
+                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory)
                 return mediainfo
 
             return None
@@ -919,17 +1078,20 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, "", "failed", failure_msg)
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
-                # 关键字触发模式：识别失败直接归类为"成人"并返回
+                # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
                 if self._recognition_mode == 'keyword' and self._keyword_failed_download:
-                    logger.info(f"Metatube: 关键字触发模式识别失败，归类为'成人'分类")
+                    # 检测分类
+                    subcategory = self._detect_category_type(number)
+                    category = f"成人/{subcategory}"
+                    logger.info(f"Metatube: 关键字触发模式识别失败，归类为'{category}'分类")
                     mediainfo = MediaInfo()
                     mediainfo.source = 'metatube'
                     mediainfo.type = MediaType.MOVIE
                     mediainfo.title = number
                     mediainfo.original_title = number
                     mediainfo.imdb_id = number
-                    mediainfo.set_category("成人")
-                    self._add_log(number, number, "success", "识别失败但已归类为成人")
+                    mediainfo.set_category(category)
+                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory)
                     return mediainfo
 
                 return None
@@ -960,17 +1122,20 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, "", "failed", failure_msg)
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
 
-            # 关键字触发模式：识别失败直接归类为"成人"并返回
+            # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
             if self._recognition_mode == 'keyword' and self._keyword_failed_download:
-                logger.info(f"Metatube: 关键字触发模式识别异常，归类为'成人'分类")
+                # 检测分类
+                subcategory = self._detect_category_type(number)
+                category = f"成人/{subcategory}"
+                logger.info(f"Metatube: 关键字触发模式识别异常，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'metatube'
                 mediainfo.type = MediaType.MOVIE
                 mediainfo.title = number
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
-                mediainfo.set_category("成人")
-                self._add_log(number, number, "success", "识别异常但已归类为成人")
+                mediainfo.set_category(category)
+                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory)
                 return mediainfo
 
             return None
