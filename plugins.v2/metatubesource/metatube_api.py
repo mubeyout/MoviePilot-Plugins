@@ -14,6 +14,13 @@ from .schema import MetatubeMovie, MetatubeSearchResponse, MetatubeMovieDetail, 
 class MetatubeApiClient:
     """Metatube API 客户端"""
 
+    # 浏览器 User-Agent，避免被服务端拒绝
+    DEFAULT_HEADERS = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    }
+
     # 番号正则表达式列表
     NUMBER_PATTERNS = [
         # 标准格式: ABC-123, ABC123
@@ -121,12 +128,13 @@ class MetatubeApiClient:
             url = self._build_url(f"/v1/movies/search")
             params = {
                 "q": keyword,
-                "fallback": str(fallback)
+                "fallback": "true" if fallback else "false"
             }
 
             response = RequestUtils(
                 timeout=self._timeout,
-                proxies=self._proxies
+                proxies=self._proxies,
+                headers=self.DEFAULT_HEADERS
             ).get_res(url, params=params)
 
             if response is None:
@@ -166,12 +174,13 @@ class MetatubeApiClient:
             url = self._build_url(f"/v1/movies/search")
             params = {
                 "q": keyword,
-                "fallback": str(fallback)
+                "fallback": "true" if fallback else "false"
             }
 
             response = await AsyncRequestUtils(
                 timeout=self._timeout,
-                proxies=self._proxies
+                proxies=self._proxies,
+                headers=self.DEFAULT_HEADERS
             ).get_res(url, params=params)
 
             if response is None:
@@ -212,7 +221,8 @@ class MetatubeApiClient:
 
             response = RequestUtils(
                 timeout=self._timeout,
-                proxies=self._proxies
+                proxies=self._proxies,
+                headers=self.DEFAULT_HEADERS
             ).get_res(url)
 
             if response is None:
@@ -253,7 +263,8 @@ class MetatubeApiClient:
 
             response = await AsyncRequestUtils(
                 timeout=self._timeout,
-                proxies=self._proxies
+                proxies=self._proxies,
+                headers=self.DEFAULT_HEADERS
             ).get_res(url)
 
             if response is None:
