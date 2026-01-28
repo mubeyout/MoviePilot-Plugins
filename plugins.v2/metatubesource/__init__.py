@@ -74,7 +74,6 @@ class MetatubeSource(_PluginBase):
     # 插件配置
     _enabled: bool = False
     _api_url: str = "http://127.0.0.1:8080"
-    _recognition_mode: str = ""  # hijacking: 劫持模式, keyword: 关键字触发模式
     _timeout: int = 30  # 默认超时30秒，metatube搜索可能需要较长时间
     _max_logs: int = 100
     _clear_logs_flag: bool = False  # 清空日志开关
@@ -86,10 +85,7 @@ class MetatubeSource(_PluginBase):
     _custom_other_keywords: str = ""  # 自定义其他关键字
     _strict_match: bool = False  # 是否严格匹配
 
-    # 劫持模式专属配置
-    _hijack_fallback_system: bool = False  # 劫持模式 - 识别失败返回系统默认
-
-    # 关键字触发模式专属配置
+    # 关键字触发模式配置
     _keyword_failed_download: bool = True  # 关键字触发模式 - 识别失败直接下载
 
     # 通用配置
@@ -112,14 +108,14 @@ class MetatubeSource(_PluginBase):
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
                                     cache: bool = True):
-            """劫持系统媒体识别方法"""
+            """劫持系统媒体识别方法 - 仅关键字触发"""
             if not plugin_instance._original_method:
                 return None
             # 调用原始方法
             result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
                                                       episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别（仅关键字触发模式）
-            if result is None and plugin_instance._enabled and plugin_instance._recognition_mode == 'keyword':
+            # 系统识别失败时使用 Metatube 识别（仅关键字触发）
+            if result is None and plugin_instance._enabled:
                 # 检查是否包含关键字
                 if plugin_instance._match_keywords(meta):
                     logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：recognize_media ...")
@@ -133,14 +129,14 @@ class MetatubeSource(_PluginBase):
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
                                                 cache: bool = True):
-            """异步劫持系统媒体识别方法"""
+            """异步劫持系统媒体识别方法 - 仅关键字触发"""
             if not plugin_instance._original_async_method:
                 return None
             # 调用原始方法
             result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
                                                                   episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别（仅关键字触发模式）
-            if result is None and plugin_instance._enabled and plugin_instance._recognition_mode == 'keyword':
+            # 系统识别失败时使用 Metatube 识别（仅关键字触发）
+            if result is None and plugin_instance._enabled:
                 # 检查是否包含关键字
                 if plugin_instance._match_keywords(meta):
                     logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：async_recognize_media ...")
@@ -164,7 +160,6 @@ class MetatubeSource(_PluginBase):
         if config:
             self._enabled = bool(config.get("enabled"))
             self._api_url = config.get("api_url") or "http://127.0.0.1:8080"
-            self._recognition_mode = config.get("recognition_mode") or ""
             self._timeout = int(config.get("timeout") or 30)
             self._max_logs = int(config.get("max_logs") or 100)
             self._custom_japanese_keywords = config.get("custom_japanese_keywords") or ""
@@ -172,7 +167,6 @@ class MetatubeSource(_PluginBase):
             self._custom_chinese_keywords = config.get("custom_chinese_keywords") or ""
             self._custom_other_keywords = config.get("custom_other_keywords") or ""
             self._strict_match = bool(config.get("strict_match") or False)
-            self._hijack_fallback_system = bool(config.get("hijack_fallback_system") or False)
             self._keyword_failed_download = bool(config.get("keyword_failed_download") if config.get("keyword_failed_download") is not None else True)
             self._show_failure_detail = bool(config.get("show_failure_detail") if config.get("show_failure_detail") is not None else True)
             self._clear_logs_flag = bool(config.get("clear_logs_flag") or False)
@@ -197,29 +191,11 @@ class MetatubeSource(_PluginBase):
         )
 
         if self._enabled:
-            if self._recognition_mode == 'hijacking':
-                # 劫持模式：通过 get_module 劫持系统识别
-                # 恢复原始方法（劫持模式使用 get_module）
-                if (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_method):
-                    ChainBase.recognize_media = self._original_method
-                if (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_async_method):
-                    ChainBase.async_recognize_media = self._original_async_method
-            elif self._recognition_mode == 'keyword':
-                # 关键字触发模式：系统识别失败后接管，但只处理包含关键字的内容
-                if not (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self)):
-                    ChainBase.recognize_media = patched_recognize_media
-                if not (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self)):
-                    ChainBase.async_recognize_media = patched_async_recognize_media
-            else:
-                # 未选择模式或插件被禁用，恢复原始方法
-                if (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_method):
-                    ChainBase.recognize_media = self._original_method
-                if (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_async_method):
-                    ChainBase.async_recognize_media = self._original_async_method
+            # 关键字触发模式：系统识别失败后接管，但只处理包含关键字的内容
+            if not (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self)):
+                ChainBase.recognize_media = patched_recognize_media
+            if not (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self)):
+                ChainBase.async_recognize_media = patched_async_recognize_media
         else:
             self.stop_service()
 
@@ -286,7 +262,7 @@ class MetatubeSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -299,42 +275,71 @@ class MetatubeSource(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
-                                        "component": "VSelect",
+                                        "component": "VSwitch",
                                         "props": {
-                                            "model": "recognition_mode",
-                                            "label": "识别模式",
-                                            "items": [
-                                                {"title": "劫持模式", "value": "hijacking"},
-                                                {"title": "关键字触发", "value": "keyword"}
-                                            ],
-                                            "hint": "劫持：全部交由Metatube；关键字：仅处理包含关键字的内容"
+                                            "model": "strict_match",
+                                            "label": "严格匹配",
+                                            "hint": "区分大小写和全半角"
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "show_failure_detail",
+                                            "label": "显示失败详情",
+                                            "hint": "在日志中显示详细失败原因"
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "keyword_failed_download",
+                                            "label": "失败自动下载",
+                                            "hint": "识别失败时归类为'成人'并自动下载"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "clear_logs_flag",
+                                            "label": "清空识别记录",
+                                            "hint": "保存后清空所有识别日志记录"
                                         }
                                     }
                                 ],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "timeout",
-                                            "label": "超时时间",
-                                            "type": "number",
-                                            "placeholder": "5",
-                                            "suffix": "秒",
-                                            "hint": "API请求超时（1-30秒）",
-                                            "min": 1,
-                                            "max": 30
-                                        }
-                                    }
-                                ]
+                                "props": {"cols": 12, "md": 9},
+                                "content": []
                             }
-                        ],
+                        ]
                     },
                     {
                         "component": "VRow",
@@ -364,9 +369,33 @@ class MetatubeSource(_PluginBase):
                                 "props": {"cols": 12},
                                 "content": [
                                     {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "timeout",
+                                            "label": "超时时间",
+                                            "type": "number",
+                                            "placeholder": "30",
+                                            "suffix": "秒",
+                                            "hint": "API请求超时时间（1-30秒）",
+                                            "min": 1,
+                                            "max": 30
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
                                         "component": "div",
                                         "props": {"class": "text-h6 mb-2"},
-                                        "text": "自定义关键词配置（按分类管理）"
+                                        "text": "关键词配置（按分类管理）"
                                     }
                                 ]
                             }
@@ -451,91 +480,6 @@ class MetatubeSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "strict_match",
-                                            "label": "严格匹配",
-                                            "hint": "区分大小写和全半角"
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "show_failure_detail",
-                                            "label": "显示失败详情",
-                                            "hint": "在日志中显示详细失败原因"
-                                        },
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "hijack_fallback_system",
-                                            "label": "识别失败回退系统",
-                                            "hint": "劫持模式：识别失败时回退到themoviedb"
-                                        }
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "keyword_failed_download",
-                                            "label": "失败自动下载",
-                                            "hint": "关键字模式：识别失败时归类为'成人'并自动下载"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "clear_logs_flag",
-                                            "label": "清空识别记录",
-                                            "hint": "保存后清空所有识别日志记录"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
                                 "props": {"cols": 12},
                                 "content": [
                                     {
@@ -551,11 +495,11 @@ class MetatubeSource(_PluginBase):
                                                 "content": [
                                                     {
                                                         "component": "p",
-                                                        "text": "• 劫持模式：拦截所有识别请求，全部交由 Metatube 处理"
+                                                        "text": "• 工作模式：系统默认识别优先，识别失败时检查标题是否包含关键字"
                                                     },
                                                     {
                                                         "component": "p",
-                                                        "text": "• 关键字触发：标题包含指定关键字才使用 Metatube 识别"
+                                                        "text": "• 关键字匹配：标题包含指定关键字才使用 Metatube 识别"
                                                     },
                                                     {
                                                         "component": "p",
@@ -582,7 +526,6 @@ class MetatubeSource(_PluginBase):
         ], {
             "enabled": False,
             "api_url": "http://127.0.0.1:8080",
-            "recognition_mode": "",
             "timeout": 30,
             "max_logs": 100,
             "custom_japanese_keywords": "",
@@ -590,7 +533,6 @@ class MetatubeSource(_PluginBase):
             "custom_chinese_keywords": "",
             "custom_other_keywords": "",
             "strict_match": False,
-            "hijack_fallback_system": False,
             "keyword_failed_download": True,
             "show_failure_detail": True
         }
@@ -693,20 +635,12 @@ class MetatubeSource(_PluginBase):
                 self._original_async_method):
             ChainBase.async_recognize_media = self._original_async_method
 
-    def get_module(self) -> Dict[str, Any]:
-        """获取插件模块声明，用于劫持系统模块实现"""
-        modules = {}
-        if self._enabled and self._recognition_mode == 'hijacking':
-            modules['async_recognize_media'] = self.async_recognize_media
-            modules['recognize_media'] = self.recognize_media
-        return modules
 
     def _update_config(self):
         """更新配置"""
         self.update_config({
             "enabled": self._enabled,
             "api_url": self._api_url,
-            "recognition_mode": self._recognition_mode,
             "timeout": self._timeout,
             "max_logs": self._max_logs,
             "custom_japanese_keywords": self._custom_japanese_keywords,
@@ -714,7 +648,6 @@ class MetatubeSource(_PluginBase):
             "custom_chinese_keywords": self._custom_chinese_keywords,
             "custom_other_keywords": self._custom_other_keywords,
             "strict_match": self._strict_match,
-            "hijack_fallback_system": self._hijack_fallback_system,
             "keyword_failed_download": self._keyword_failed_download,
             "show_failure_detail": self._show_failure_detail,
             "clear_logs_flag": self._clear_logs_flag
@@ -942,11 +875,10 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
-        # 关键字触发模式：检查是否匹配关键字
-        if self._recognition_mode == 'keyword':
-            if not self._match_keywords(meta):
-                logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
-                return None
+        # 检查是否匹配关键字
+        if not self._match_keywords(meta):
+            logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
+            return None
 
         # 提取番号
         number = self._extract_number_from_meta(meta)
@@ -966,7 +898,7 @@ class MetatubeSource(_PluginBase):
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
                 # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
-                if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+                if self._keyword_failed_download:
                     # 检测分类
                     subcategory = self._detect_category_type(number)
                     category = f"成人/{subcategory}"
@@ -1010,7 +942,7 @@ class MetatubeSource(_PluginBase):
             logger.error(f"Metatube: 识别异常 - {str(e)}")
 
             # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
-            if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+            if self._keyword_failed_download:
                 # 检测分类
                 subcategory = self._detect_category_type(number)
                 category = f"成人/{subcategory}"
@@ -1043,11 +975,10 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
-        # 关键字触发模式：检查是否匹配关键字
-        if self._recognition_mode == 'keyword':
-            if not self._match_keywords(meta):
-                logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
-                return None
+        # 检查是否匹配关键字
+        if not self._match_keywords(meta):
+            logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
+            return None
 
         # 提取番号
         number = self._extract_number_from_meta(meta)
@@ -1067,7 +998,7 @@ class MetatubeSource(_PluginBase):
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
                 # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
-                if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+                if self._keyword_failed_download:
                     # 检测分类
                     subcategory = self._detect_category_type(number)
                     category = f"成人/{subcategory}"
@@ -1111,7 +1042,7 @@ class MetatubeSource(_PluginBase):
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
 
             # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
-            if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+            if self._keyword_failed_download:
                 # 检测分类
                 subcategory = self._detect_category_type(number)
                 category = f"成人/{subcategory}"
