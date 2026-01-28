@@ -26,7 +26,7 @@ class MetatubeSource(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
     # 插件版本
-    plugin_version = "2.0.1"
+    plugin_version = "1.0.0"
     # 插件作者
     plugin_author = "MUBEY"
     # 作者主页
@@ -75,8 +75,9 @@ class MetatubeSource(_PluginBase):
     _enabled: bool = False
     _api_url: str = "http://127.0.0.1:8080"
     _recognition_mode: str = ""  # hijacking: 劫持模式, keyword: 关键字触发模式
-    _timeout: int = 5
+    _timeout: int = 30  # 默认超时30秒，metatube搜索可能需要较长时间
     _max_logs: int = 100
+    _clear_logs_flag: bool = False  # 清空日志开关
 
     # 关键字相关配置（分类管理）
     _custom_japanese_keywords: str = ""  # 自定义日系关键字
@@ -164,7 +165,7 @@ class MetatubeSource(_PluginBase):
             self._enabled = bool(config.get("enabled"))
             self._api_url = config.get("api_url") or "http://127.0.0.1:8080"
             self._recognition_mode = config.get("recognition_mode") or ""
-            self._timeout = int(config.get("timeout") or 5)
+            self._timeout = int(config.get("timeout") or 30)
             self._max_logs = int(config.get("max_logs") or 100)
             self._custom_japanese_keywords = config.get("custom_japanese_keywords") or ""
             self._custom_western_keywords = config.get("custom_western_keywords") or ""
@@ -174,10 +175,19 @@ class MetatubeSource(_PluginBase):
             self._hijack_fallback_system = bool(config.get("hijack_fallback_system") or False)
             self._keyword_failed_download = bool(config.get("keyword_failed_download") if config.get("keyword_failed_download") is not None else True)
             self._show_failure_detail = bool(config.get("show_failure_detail") if config.get("show_failure_detail") is not None else True)
+            self._clear_logs_flag = bool(config.get("clear_logs_flag") or False)
             # 更新日志队列大小
             if self._log_entries and self._log_entries.maxlen != self._max_logs:
                 old_logs = list(self._log_entries)
                 self._log_entries = deque(old_logs[-self._max_logs:], maxlen=self._max_logs)
+
+            # 检查是否需要清空日志（配置开关触发）
+            if self._clear_logs_flag:
+                if self._log_entries:
+                    self._log_entries.clear()
+                logger.info("Metatube: 识别日志已清空")
+                self._clear_logs_flag = False
+
             self._update_config()
 
         # 初始化API客户端
@@ -482,7 +492,7 @@ class MetatubeSource(_PluginBase):
                                             "model": "hijack_fallback_system",
                                             "label": "识别失败回退系统",
                                             "hint": "劫持模式：识别失败时回退到themoviedb"
-                                        },
+                                        }
                                     }
                                 ],
                             },
@@ -496,7 +506,26 @@ class MetatubeSource(_PluginBase):
                                             "model": "keyword_failed_download",
                                             "label": "失败自动下载",
                                             "hint": "关键字模式：识别失败时归类为'成人'并自动下载"
-                                        },
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "clear_logs_flag",
+                                            "label": "清空识别记录",
+                                            "hint": "保存后清空所有识别日志记录"
+                                        }
                                     }
                                 ]
                             }
@@ -554,7 +583,7 @@ class MetatubeSource(_PluginBase):
             "enabled": False,
             "api_url": "http://127.0.0.1:8080",
             "recognition_mode": "",
-            "timeout": 5,
+            "timeout": 30,
             "max_logs": 100,
             "custom_japanese_keywords": "",
             "custom_western_keywords": "",
@@ -578,49 +607,7 @@ class MetatubeSource(_PluginBase):
                 "content": [
                     {
                         "component": "VCardTitle",
-                        "props": {"class": "d-flex align-center"},
-                        "content": [
-                            {
-                                "component": "span",
-                                "text": "识别记录"
-                            },
-                            {
-                                "component": "VSpacer"
-                            },
-                            {
-                                "component": "VBtn",
-                                "props": {
-                                    "color": "primary",
-                                    "variant": "tonal",
-                                    "size": "small",
-                                    "class": "mr-2"
-                                },
-                                "text": "刷新",
-                                "events": {
-                                    "click": {
-                                        "action": "refresh",
-                                        "api": "/plugin/v1/metatubesource/logs",
-                                        "method": "GET"
-                                    }
-                                }
-                            },
-                            {
-                                "component": "VBtn",
-                                "props": {
-                                    "color": "error",
-                                    "variant": "tonal",
-                                    "size": "small"
-                                },
-                                "text": "清空",
-                                "events": {
-                                    "click": {
-                                        "action": "submit",
-                                        "api": "/plugin/v1/metatubesource/clear_logs",
-                                        "method": "POST"
-                                    }
-                                }
-                            }
-                        ]
+                        "text": "识别记录"
                     },
                     {
                         "component": "VCardText",
@@ -729,7 +716,8 @@ class MetatubeSource(_PluginBase):
             "strict_match": self._strict_match,
             "hijack_fallback_system": self._hijack_fallback_system,
             "keyword_failed_download": self._keyword_failed_download,
-            "show_failure_detail": self._show_failure_detail
+            "show_failure_detail": self._show_failure_detail,
+            "clear_logs_flag": self._clear_logs_flag
         })
 
     def _add_log(self, keyword: str, result: str, status: str, message: str):
