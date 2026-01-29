@@ -75,12 +75,42 @@ class MetatubeSource(_PluginBase):
         "高清", "无码", "有码", "中文字幕", "原声", "完整版", "流出", "泄露"
     ]
 
+    # ==================== 命名模板预设 ====================
+    # 支持变量: {number} {actor} {studio} {label} {year} {title} {series}
+    NAMING_TEMPLATES = {
+        "number_actor_studio": "{number} {actor} [{studio}]",          # SSIS-001 三上悠亚 [S1]
+        "number_actor": "{number} {actor}",                            # SSIS-001 三上悠亚
+        "number_studio_actor": "{number} [{studio}] {actor}",          # SSIS-001 [S1] 三上悠亚
+        "number_only": "{number}",                                     # SSIS-001
+        "number_year": "{number} ({year})",                            # SSIS-001 (2024)
+        "number_actor_year": "{number} {actor} ({year})",              # SSIS-001 三上悠亚 (2024)
+        "full": "{number} {actor} [{studio}] ({year})",                # SSIS-001 三上悠亚 [S1] (2024)
+        "custom": ""  # 用户自定义模板
+    }
+
+    # 模板显示名称（用于UI）
+    NAMING_TEMPLATE_LABELS = {
+        "number_actor_studio": "番号 演员 [片商]",
+        "number_actor": "番号 演员",
+        "number_studio_actor": "番号 [片商] 演员",
+        "number_only": "仅番号",
+        "number_year": "番号 (年份)",
+        "number_actor_year": "番号 演员 (年份)",
+        "full": "完整格式",
+        "custom": "自定义模板"
+    }
+
     # 插件配置
     _enabled: bool = False
     _api_url: str = "http://127.0.0.1:8080"
     _timeout: int = 30  # 默认超时30秒，metatube搜索可能需要较长时间
     _max_logs: int = 100
     _clear_logs_flag: bool = False  # 清空日志开关
+
+    # 命名规则配置
+    _naming_template: str = "number_actor_studio"  # 默认模板
+    _custom_naming_template: str = ""  # 自定义模板
+    _max_actors: int = 2  # 最多显示演员数
 
     # 关键字相关配置（分类管理）
     _custom_japanese_keywords: str = ""  # 自定义日系关键字
@@ -179,6 +209,10 @@ class MetatubeSource(_PluginBase):
             self._keyword_failed_download = bool(config.get("keyword_failed_download") if config.get("keyword_failed_download") is not None else True)
             self._show_failure_detail = bool(config.get("show_failure_detail") if config.get("show_failure_detail") is not None else True)
             self._clear_logs_flag = bool(config.get("clear_logs_flag") or False)
+            # 命名规则配置
+            self._naming_template = config.get("naming_template") or "number_actor_studio"
+            self._custom_naming_template = config.get("custom_naming_template") or ""
+            self._max_actors = int(config.get("max_actors") or 2)
             # ThePornDB 配置
             self._theporndb_enabled = bool(config.get("theporndb_enabled") or False)
             self._theporndb_api_token = config.get("theporndb_api_token") or ""
@@ -414,6 +448,82 @@ class MetatubeSource(_PluginBase):
                                             "label": "ThePornDB API Token",
                                             "placeholder": "从 https://theporndb.net 获取API Token",
                                             "hint": "登录 ThePornDB 后在设置页面获取 Metadata API Token"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "命名规则配置"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "naming_template",
+                                            "label": "命名模板",
+                                            "items": [
+                                                {"title": "番号 演员 [片商]", "value": "number_actor_studio"},
+                                                {"title": "番号 演员", "value": "number_actor"},
+                                                {"title": "番号 [片商] 演员", "value": "number_studio_actor"},
+                                                {"title": "仅番号", "value": "number_only"},
+                                                {"title": "番号 (年份)", "value": "number_year"},
+                                                {"title": "番号 演员 (年份)", "value": "number_actor_year"},
+                                                {"title": "完整格式", "value": "full"},
+                                                {"title": "自定义模板", "value": "custom"}
+                                            ],
+                                            "hint": "选择文件重命名格式"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 2},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "max_actors",
+                                            "label": "演员数量",
+                                            "type": "number",
+                                            "placeholder": "2",
+                                            "hint": "最多显示几位演员"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "custom_naming_template",
+                                            "label": "自定义模板",
+                                            "placeholder": "{number} {actor} [{studio}] ({year})",
+                                            "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}"
                                         }
                                     }
                                 ]
@@ -688,6 +798,9 @@ class MetatubeSource(_PluginBase):
             "keyword_failed_download": self._keyword_failed_download,
             "show_failure_detail": self._show_failure_detail,
             "clear_logs_flag": self._clear_logs_flag,
+            "naming_template": self._naming_template,
+            "custom_naming_template": self._custom_naming_template,
+            "max_actors": self._max_actors,
             "theporndb_enabled": self._theporndb_enabled,
             "theporndb_api_token": self._theporndb_api_token
         })
@@ -835,14 +948,107 @@ class MetatubeSource(_PluginBase):
 
         return None
 
+    def _build_optimized_title(self, number: str, actors: List[str] = None,
+                                 studio: str = "", label: str = "", year: str = "",
+                                 series: str = "", original_title: str = "") -> str:
+        """
+        基于模板构建优化的标题
+
+        支持变量: {number} {actor} {studio} {label} {year} {title} {series}
+        示例模板: "{number} {actor} [{studio}]" -> "SSIS-001 三上悠亚 [S1]"
+
+        :param number: 番号（必须）
+        :param actors: 演员列表
+        :param studio: 制作商/片商
+        :param label: 发行商
+        :param year: 年份
+        :param series: 系列
+        :param original_title: 原始标题
+        :return: 优化后的标题
+        """
+        # 获取模板
+        template_key = self._naming_template or "number_actor_studio"
+        if template_key == "custom" and self._custom_naming_template:
+            template = self._custom_naming_template
+        else:
+            template = self.NAMING_TEMPLATES.get(template_key, self.NAMING_TEMPLATES["number_actor_studio"])
+
+        # 准备变量值
+        number_str = (number or "").upper().strip()
+
+        # 处理演员列表
+        actor_str = ""
+        if actors and len(actors) > 0:
+            valid_actors = [a.strip() for a in actors if a and a.strip()]
+            if valid_actors:
+                max_actors = self._max_actors or 2
+                if len(valid_actors) <= max_actors:
+                    actor_str = ", ".join(valid_actors)
+                else:
+                    actor_str = ", ".join(valid_actors[:max_actors]) + "…"
+
+        # 片商：优先 studio，其次 label
+        studio_str = (studio or "").strip() or (label or "").strip()
+        label_str = (label or "").strip()
+        year_str = (year or "").strip()
+        series_str = (series or "").strip()
+        title_str = (original_title or "").strip()
+
+        # 替换模板变量
+        result = template
+        result = result.replace("{number}", number_str)
+        result = result.replace("{actor}", actor_str)
+        result = result.replace("{studio}", studio_str)
+        result = result.replace("{label}", label_str)
+        result = result.replace("{year}", year_str)
+        result = result.replace("{series}", series_str)
+        result = result.replace("{title}", title_str)
+
+        # 清理空括号和多余空格
+        result = re.sub(r'\[\s*\]', '', result)  # 移除空的 []
+        result = re.sub(r'\(\s*\)', '', result)  # 移除空的 ()
+        result = re.sub(r'\s+', ' ', result)     # 合并多余空格
+        result = result.strip()
+
+        # 兜底
+        if not result:
+            return number_str or title_str or "Unknown"
+
+        return result
+
     def _convert_to_mediainfo(self, movie: MetatubeMovie, detail: Optional[MetatubeMovieDetail] = None) -> MediaInfo:
         """将 Metatube 结果转换为 MediaInfo"""
         mediainfo = MediaInfo()
         mediainfo.source = 'metatube'
         mediainfo.type = MediaType.MOVIE  # 番号内容通常作为电影处理
 
+        # 获取详情中的额外信息
+        studio = detail.studio if detail else ""
+        label = detail.label if detail else ""
+        series = detail.series if detail else ""
+
+        # 解析年份
+        year = ""
+        if movie.release_date:
+            try:
+                date_str = movie.release_date.split('T')[0]
+                year = date_str[:4]
+            except Exception:
+                pass
+
+        # 构建优化标题（基于模板）
+        optimized_title = self._build_optimized_title(
+            number=movie.number,
+            actors=movie.actors,
+            studio=studio,
+            label=label,
+            year=year,
+            series=series,
+            original_title=movie.title
+        )
+
         # 基础信息
-        mediainfo.title = movie.title or movie.number
+        mediainfo.title = optimized_title
         mediainfo.original_title = movie.number
 
         # 解析发布日期获取年份
