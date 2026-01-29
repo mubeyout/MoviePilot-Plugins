@@ -15,7 +15,11 @@ from app.log import logger
 from app.schemas.types import MediaType
 
 from .metatube_api import MetatubeApiClient
-from .schema import MetatubeMovie, MetatubeMovieDetail, LogEntry
+from .theporndb_api import ThePornDBApiClient
+from .schema import (
+    MetatubeMovie, MetatubeMovieDetail, LogEntry,
+    ThePornDBScene, ThePornDBSceneDetail
+)
 
 
 class MetatubeSource(_PluginBase):
@@ -74,7 +78,6 @@ class MetatubeSource(_PluginBase):
     # 插件配置
     _enabled: bool = False
     _api_url: str = "http://127.0.0.1:8080"
-    _recognition_mode: str = ""  # hijacking: 劫持模式, keyword: 关键字触发模式
     _timeout: int = 30  # 默认超时30秒，metatube搜索可能需要较长时间
     _max_logs: int = 100
     _clear_logs_flag: bool = False  # 清空日志开关
@@ -86,17 +89,19 @@ class MetatubeSource(_PluginBase):
     _custom_other_keywords: str = ""  # 自定义其他关键字
     _strict_match: bool = False  # 是否严格匹配
 
-    # 劫持模式专属配置
-    _hijack_fallback_system: bool = False  # 劫持模式 - 识别失败返回系统默认
-
-    # 关键字触发模式专属配置
-    _keyword_failed_download: bool = True  # 关键字触发模式 - 识别失败直接下载
+    # 关键字触发模式配置
+    _keyword_failed_download: bool = True  # 识别失败直接下载
 
     # 通用配置
     _show_failure_detail: bool = True  # 识别失败提示开关
 
+    # ThePornDB 配置
+    _theporndb_enabled: bool = False  # 是否启用 ThePornDB
+    _theporndb_api_token: str = ""  # ThePornDB API Token
+
     # 私有属性
     _metatube_client: MetatubeApiClient = None
+    _theporndb_client: ThePornDBApiClient = None  # ThePornDB 客户端
     _original_method: Optional[Callable] = None
     _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
     _log_entries: deque = None
@@ -112,14 +117,14 @@ class MetatubeSource(_PluginBase):
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
                                     cache: bool = True):
-            """劫持系统媒体识别方法"""
+            """劫持系统媒体识别方法（关键字触发模式）"""
             if not plugin_instance._original_method:
                 return None
             # 调用原始方法
             result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
                                                       episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别（仅关键字触发模式）
-            if result is None and plugin_instance._enabled and plugin_instance._recognition_mode == 'keyword':
+            # 系统识别失败时使用 Metatube 识别
+            if result is None and plugin_instance._enabled:
                 # 检查是否包含关键字
                 if plugin_instance._match_keywords(meta):
                     logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：recognize_media ...")
@@ -133,14 +138,14 @@ class MetatubeSource(_PluginBase):
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
                                                 cache: bool = True):
-            """异步劫持系统媒体识别方法"""
+            """异步劫持系统媒体识别方法（关键字触发模式）"""
             if not plugin_instance._original_async_method:
                 return None
             # 调用原始方法
             result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
                                                                   episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别（仅关键字触发模式）
-            if result is None and plugin_instance._enabled and plugin_instance._recognition_mode == 'keyword':
+            # 系统识别失败时使用 Metatube 识别
+            if result is None and plugin_instance._enabled:
                 # 检查是否包含关键字
                 if plugin_instance._match_keywords(meta):
                     logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：async_recognize_media ...")
@@ -164,7 +169,6 @@ class MetatubeSource(_PluginBase):
         if config:
             self._enabled = bool(config.get("enabled"))
             self._api_url = config.get("api_url") or "http://127.0.0.1:8080"
-            self._recognition_mode = config.get("recognition_mode") or ""
             self._timeout = int(config.get("timeout") or 30)
             self._max_logs = int(config.get("max_logs") or 100)
             self._custom_japanese_keywords = config.get("custom_japanese_keywords") or ""
@@ -172,10 +176,12 @@ class MetatubeSource(_PluginBase):
             self._custom_chinese_keywords = config.get("custom_chinese_keywords") or ""
             self._custom_other_keywords = config.get("custom_other_keywords") or ""
             self._strict_match = bool(config.get("strict_match") or False)
-            self._hijack_fallback_system = bool(config.get("hijack_fallback_system") or False)
             self._keyword_failed_download = bool(config.get("keyword_failed_download") if config.get("keyword_failed_download") is not None else True)
             self._show_failure_detail = bool(config.get("show_failure_detail") if config.get("show_failure_detail") is not None else True)
             self._clear_logs_flag = bool(config.get("clear_logs_flag") or False)
+            # ThePornDB 配置
+            self._theporndb_enabled = bool(config.get("theporndb_enabled") or False)
+            self._theporndb_api_token = config.get("theporndb_api_token") or ""
             # 更新日志队列大小
             if self._log_entries and self._log_entries.maxlen != self._max_logs:
                 old_logs = list(self._log_entries)
@@ -196,30 +202,18 @@ class MetatubeSource(_PluginBase):
             timeout=self._timeout
         )
 
+        # 初始化 ThePornDB 客户端
+        self._theporndb_client = ThePornDBApiClient(
+            api_token=self._theporndb_api_token,
+            timeout=self._timeout
+        )
+
         if self._enabled:
-            if self._recognition_mode == 'hijacking':
-                # 劫持模式：通过 get_module 劫持系统识别
-                # 恢复原始方法（劫持模式使用 get_module）
-                if (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_method):
-                    ChainBase.recognize_media = self._original_method
-                if (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_async_method):
-                    ChainBase.async_recognize_media = self._original_async_method
-            elif self._recognition_mode == 'keyword':
-                # 关键字触发模式：系统识别失败后接管，但只处理包含关键字的内容
-                if not (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self)):
-                    ChainBase.recognize_media = patched_recognize_media
-                if not (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self)):
-                    ChainBase.async_recognize_media = patched_async_recognize_media
-            else:
-                # 未选择模式或插件被禁用，恢复原始方法
-                if (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_method):
-                    ChainBase.recognize_media = self._original_method
-                if (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self) and
-                        self._original_async_method):
-                    ChainBase.async_recognize_media = self._original_async_method
+            # 关键字触发模式：系统识别失败后接管，只处理包含关键字的内容
+            if not (getattr(ChainBase.recognize_media, "_patched_by", object()) == id(self)):
+                ChainBase.recognize_media = patched_recognize_media
+            if not (getattr(ChainBase.async_recognize_media, "_patched_by", object()) == id(self)):
+                ChainBase.async_recognize_media = patched_async_recognize_media
         else:
             self.stop_service()
 
@@ -286,7 +280,7 @@ class MetatubeSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -299,37 +293,42 @@ class MetatubeSource(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
-                                        "component": "VSelect",
+                                        "component": "VSwitch",
                                         "props": {
-                                            "model": "recognition_mode",
-                                            "label": "识别模式",
-                                            "items": [
-                                                {"title": "劫持模式", "value": "hijacking"},
-                                                {"title": "关键字触发", "value": "keyword"}
-                                            ],
-                                            "hint": "劫持：全部交由Metatube；关键字：仅处理包含关键字的内容"
-                                        }
+                                            "model": "strict_match",
+                                            "label": "严格匹配",
+                                            "hint": "区分大小写和全半角"
+                                        },
                                     }
                                 ],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
-                                        "component": "VTextField",
+                                        "component": "VSwitch",
                                         "props": {
-                                            "model": "timeout",
-                                            "label": "超时时间",
-                                            "type": "number",
-                                            "placeholder": "5",
-                                            "suffix": "秒",
-                                            "hint": "API请求超时（1-30秒）",
-                                            "min": 1,
-                                            "max": 30
+                                            "model": "show_failure_detail",
+                                            "label": "显示失败详情",
+                                            "hint": "在日志中显示详细失败原因"
+                                        },
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "keyword_failed_download",
+                                            "label": "失败自动下载",
+                                            "hint": "识别失败时归类为'成人'并自动下载"
                                         }
                                     }
                                 ]
@@ -341,15 +340,80 @@ class MetatubeSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12},
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "theporndb_enabled",
+                                            "label": "启用ThePornDB",
+                                            "hint": "欧美系内容使用ThePornDB识别"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "clear_logs_flag",
+                                            "label": "清空识别记录",
+                                            "hint": "保存后清空所有识别日志记录"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "timeout",
+                                            "label": "超时时间",
+                                            "type": "number",
+                                            "placeholder": "30",
+                                            "suffix": "秒",
+                                            "hint": "API请求超时（1-60秒）"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
                                 "content": [
                                     {
                                         "component": "VTextField",
                                         "props": {
                                             "model": "api_url",
-                                            "label": "API地址",
+                                            "label": "Metatube API地址",
                                             "placeholder": "http://127.0.0.1:8080",
                                             "hint": "Metatube服务地址，如：http://192.168.1.100:8080"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "theporndb_api_token",
+                                            "label": "ThePornDB API Token",
+                                            "placeholder": "从 https://theporndb.net 获取API Token",
+                                            "hint": "登录 ThePornDB 后在设置页面获取 Metadata API Token"
                                         }
                                     }
                                 ]
@@ -451,91 +515,6 @@ class MetatubeSource(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "strict_match",
-                                            "label": "严格匹配",
-                                            "hint": "区分大小写和全半角"
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "show_failure_detail",
-                                            "label": "显示失败详情",
-                                            "hint": "在日志中显示详细失败原因"
-                                        },
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "hijack_fallback_system",
-                                            "label": "识别失败回退系统",
-                                            "hint": "劫持模式：识别失败时回退到themoviedb"
-                                        }
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "keyword_failed_download",
-                                            "label": "失败自动下载",
-                                            "hint": "关键字模式：识别失败时归类为'成人'并自动下载"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "clear_logs_flag",
-                                            "label": "清空识别记录",
-                                            "hint": "保存后清空所有识别日志记录"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
                                 "props": {"cols": 12},
                                 "content": [
                                     {
@@ -551,19 +530,15 @@ class MetatubeSource(_PluginBase):
                                                 "content": [
                                                     {
                                                         "component": "p",
-                                                        "text": "• 劫持模式：拦截所有识别请求，全部交由 Metatube 处理"
+                                                        "text": "• 关键字触发：标题包含指定关键字时使用 Metatube 识别，系统识别失败后自动接管"
                                                     },
                                                     {
                                                         "component": "p",
-                                                        "text": "• 关键字触发：标题包含指定关键字才使用 Metatube 识别"
+                                                        "text": "• 欧美系专用：启用 ThePornDB 后，匹配欧美系关键字的内容将使用 ThePornDB 识别"
                                                     },
                                                     {
                                                         "component": "p",
                                                         "text": "• 二级分类：自动识别内容类型并归类为「成人/日系」、「成人/欧美系」、「成人/中文系」、「成人/其他」"
-                                                    },
-                                                    {
-                                                        "component": "p",
-                                                        "text": "• 分类关键词：内置关键词库包含常用番号前缀和平台标识，可按需自定义各分类关键词"
                                                     },
                                                     {
                                                         "component": "p",
@@ -582,7 +557,6 @@ class MetatubeSource(_PluginBase):
         ], {
             "enabled": False,
             "api_url": "http://127.0.0.1:8080",
-            "recognition_mode": "",
             "timeout": 30,
             "max_logs": 100,
             "custom_japanese_keywords": "",
@@ -590,9 +564,10 @@ class MetatubeSource(_PluginBase):
             "custom_chinese_keywords": "",
             "custom_other_keywords": "",
             "strict_match": False,
-            "hijack_fallback_system": False,
             "keyword_failed_download": True,
-            "show_failure_detail": True
+            "show_failure_detail": True,
+            "theporndb_enabled": False,
+            "theporndb_api_token": ""
         }
 
     def get_page(self) -> List[dict]:
@@ -694,19 +669,15 @@ class MetatubeSource(_PluginBase):
             ChainBase.async_recognize_media = self._original_async_method
 
     def get_module(self) -> Dict[str, Any]:
-        """获取插件模块声明，用于劫持系统模块实现"""
-        modules = {}
-        if self._enabled and self._recognition_mode == 'hijacking':
-            modules['async_recognize_media'] = self.async_recognize_media
-            modules['recognize_media'] = self.recognize_media
-        return modules
+        """获取插件模块声明"""
+        # 已移除劫持模式，返回空
+        return {}
 
     def _update_config(self):
         """更新配置"""
         self.update_config({
             "enabled": self._enabled,
             "api_url": self._api_url,
-            "recognition_mode": self._recognition_mode,
             "timeout": self._timeout,
             "max_logs": self._max_logs,
             "custom_japanese_keywords": self._custom_japanese_keywords,
@@ -714,10 +685,11 @@ class MetatubeSource(_PluginBase):
             "custom_chinese_keywords": self._custom_chinese_keywords,
             "custom_other_keywords": self._custom_other_keywords,
             "strict_match": self._strict_match,
-            "hijack_fallback_system": self._hijack_fallback_system,
             "keyword_failed_download": self._keyword_failed_download,
             "show_failure_detail": self._show_failure_detail,
-            "clear_logs_flag": self._clear_logs_flag
+            "clear_logs_flag": self._clear_logs_flag,
+            "theporndb_enabled": self._theporndb_enabled,
+            "theporndb_api_token": self._theporndb_api_token
         })
 
     def _add_log(self, keyword: str, result: str, status: str, message: str):
@@ -926,6 +898,149 @@ class MetatubeSource(_PluginBase):
 
         return mediainfo
 
+    def _convert_theporndb_to_mediainfo(self, scene: ThePornDBScene,
+                                        detail: Optional[ThePornDBSceneDetail] = None) -> MediaInfo:
+        """将 ThePornDB 结果转换为 MediaInfo"""
+        mediainfo = MediaInfo()
+        mediainfo.source = 'theporndb'
+        mediainfo.type = MediaType.MOVIE  # 作为电影处理
+
+        # 基础信息
+        mediainfo.title = scene.title
+        mediainfo.original_title = scene.title
+
+        # 解析日期获取年份
+        if scene.date:
+            try:
+                date_str = scene.date.split('T')[0] if 'T' in scene.date else scene.date
+                mediainfo.year = date_str[:4]
+                mediainfo.release_date = date_str
+            except Exception:
+                pass
+
+        # 使用 UUID 作为标识
+        mediainfo.imdb_id = scene.uuid
+
+        # 海报
+        if scene.poster:
+            mediainfo.poster_path = scene.poster
+
+        # 如果有详情，补充更多信息
+        if detail:
+            if detail.description:
+                mediainfo.overview = detail.description
+            if detail.tags:
+                mediainfo.genres = [{"id": tag.name, "name": tag.name} for tag in detail.tags]
+            if detail.duration:
+                mediainfo.runtime = detail.duration // 60  # 秒转分钟
+            if detail.posters and detail.posters.large:
+                mediainfo.poster_path = detail.posters.large
+            if detail.background and detail.background.large:
+                mediainfo.backdrop_path = detail.background.large
+            if detail.performers:
+                mediainfo.actors = [{"name": p.name} for p in detail.performers]
+
+        # 欧美系分类
+        category = "成人/欧美系"
+        mediainfo.set_category(category)
+        logger.info(f"ThePornDB: 分类设置为 '{category}' (标题: {scene.title})")
+
+        return mediainfo
+
+    def _should_use_theporndb(self, title: str) -> bool:
+        """
+        判断是否应该使用 ThePornDB 进行识别
+
+        :param title: 标题
+        :return: 是否使用 ThePornDB
+        """
+        if not self._theporndb_enabled or not self._theporndb_api_token:
+            return False
+
+        # 检测分类类型
+        category_type = self._detect_category_type(title)
+        return category_type == "欧美系"
+
+    def _recognize_with_theporndb(self, title: str) -> Optional[MediaInfo]:
+        """
+        使用 ThePornDB 识别媒体
+
+        :param title: 搜索标题
+        :return: 识别结果
+        """
+        logger.info(f"ThePornDB: 正在识别 '{title}' ...")
+
+        try:
+            # 搜索
+            results = self._theporndb_client.search_scenes(title)
+            if not results:
+                logger.warning(f"ThePornDB: '{title}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            scene = results[0]
+
+            # 尝试获取详情
+            detail = None
+            if scene.uuid:
+                try:
+                    detail = self._theporndb_client.get_scene_detail(scene.uuid)
+                except Exception as e:
+                    logger.debug(f"ThePornDB: 获取详情失败: {str(e)}")
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                          "来源: ThePornDB")
+            logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ThePornDB: 识别异常 - {str(e)}")
+            return None
+
+    async def _async_recognize_with_theporndb(self, title: str) -> Optional[MediaInfo]:
+        """
+        异步使用 ThePornDB 识别媒体
+
+        :param title: 搜索标题
+        :return: 识别结果
+        """
+        logger.info(f"ThePornDB: 正在异步识别 '{title}' ...")
+
+        try:
+            # 异步搜索
+            results = await self._theporndb_client.async_search_scenes(title)
+            if not results:
+                logger.warning(f"ThePornDB: '{title}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            scene = results[0]
+
+            # 尝试获取详情
+            detail = None
+            if scene.uuid:
+                try:
+                    detail = await self._theporndb_client.async_get_scene_detail(scene.uuid)
+                except Exception as e:
+                    logger.debug(f"ThePornDB: 获取详情失败: {str(e)}")
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                          "来源: ThePornDB")
+            logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ThePornDB: 异步识别异常 - {str(e)}")
+            return None
+
     def recognize_media(self, meta: MetaBase = None,
                         mtype: MediaType = None,
                         **kwargs) -> Optional[MediaInfo]:
@@ -942,12 +1057,6 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
-        # 关键字触发模式：检查是否匹配关键字
-        if self._recognition_mode == 'keyword':
-            if not self._match_keywords(meta):
-                logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
-                return None
-
         # 提取番号
         number = self._extract_number_from_meta(meta)
         if not number:
@@ -955,6 +1064,33 @@ class MetatubeSource(_PluginBase):
             return None
 
         logger.info(f"Metatube: 正在识别番号 {number} ...")
+
+        # 获取标题用于判断分类
+        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or number
+
+        # 欧美系内容优先使用 ThePornDB
+        if self._should_use_theporndb(title):
+            logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
+            result = self._recognize_with_theporndb(title)
+            if result:
+                return result
+            # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
+            logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
+            if self._keyword_failed_download:
+                category = "成人/欧美系"
+                logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
+                mediainfo = MediaInfo()
+                mediainfo.source = 'theporndb'
+                mediainfo.type = MediaType.MOVIE
+                mediainfo.title = number
+                mediainfo.original_title = number
+                mediainfo.imdb_id = number
+                mediainfo.set_category(category)
+                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系")
+                return mediainfo
+            else:
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载")
+                return None
 
         try:
             # 搜索
@@ -965,8 +1101,8 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, "", "failed", failure_msg)
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
-                # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
-                if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+                # 识别失败直接归类为"成人/其他"并返回
+                if self._keyword_failed_download:
                     # 检测分类
                     subcategory = self._detect_category_type(number)
                     category = f"成人/{subcategory}"
@@ -1043,12 +1179,6 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
-        # 关键字触发模式：检查是否匹配关键字
-        if self._recognition_mode == 'keyword':
-            if not self._match_keywords(meta):
-                logger.debug(f"Metatube: 标题不包含关键字，跳过识别")
-                return None
-
         # 提取番号
         number = self._extract_number_from_meta(meta)
         if not number:
@@ -1056,6 +1186,33 @@ class MetatubeSource(_PluginBase):
             return None
 
         logger.info(f"Metatube: 正在异步识别番号 {number} ...")
+
+        # 获取标题用于判断分类
+        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or number
+
+        # 欧美系内容优先使用 ThePornDB
+        if self._should_use_theporndb(title):
+            logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
+            result = await self._async_recognize_with_theporndb(title)
+            if result:
+                return result
+            # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
+            logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
+            if self._keyword_failed_download:
+                category = "成人/欧美系"
+                logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
+                mediainfo = MediaInfo()
+                mediainfo.source = 'theporndb'
+                mediainfo.type = MediaType.MOVIE
+                mediainfo.title = number
+                mediainfo.original_title = number
+                mediainfo.imdb_id = number
+                mediainfo.set_category(category)
+                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系")
+                return mediainfo
+            else:
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载")
+                return None
 
         try:
             # 异步搜索
@@ -1066,8 +1223,8 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, "", "failed", failure_msg)
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
-                # 关键字触发模式：识别失败直接归类为"成人/其他"并返回
-                if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+                # 识别失败直接归类为"成人/其他"并返回
+                if self._keyword_failed_download:
                     # 检测分类
                     subcategory = self._detect_category_type(number)
                     category = f"成人/{subcategory}"
