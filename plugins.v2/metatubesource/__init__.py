@@ -147,19 +147,41 @@ class MetatubeSource(_PluginBase):
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
                                     cache: bool = True):
-            """劫持系统媒体识别方法（关键字触发模式）"""
+            """
+            劫持系统媒体识别方法（关键字优先模式）
+
+            优先级：
+            1. 匹配 metatube 关键词 → 直接由 metatube 处理
+            2. 不匹配关键词 → 交由系统 IMDB 识别
+            3. 系统识别失败 → 最后由 metatube 兜底处理
+            """
             if not plugin_instance._original_method:
                 return None
-            # 调用原始方法
-            result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                      episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别
-            if result is None and plugin_instance._enabled:
-                # 检查是否包含关键字
+
+            if plugin_instance._enabled:
+                # 1. 优先检查是否匹配 metatube 关键词
                 if plugin_instance._match_keywords(meta):
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：recognize_media ...")
-                    return plugin_instance.recognize_media(meta, mtype)
-            return result
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：recognize_media ...")
+                    result = plugin_instance.recognize_media(meta, mtype)
+                    if result:
+                        return result
+                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
+                    logger.debug(f"Metatube 识别失败，关键词匹配内容不回退系统识别")
+                    return None
+
+                # 2. 不匹配关键词，交由系统 IMDB 识别
+                result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                          episode_group, cache)
+                if result:
+                    return result
+
+                # 3. 系统识别也失败，最后由 metatube 兜底处理
+                logger.info(f"系统识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：recognize_media ...")
+                return plugin_instance.recognize_media(meta, mtype)
+
+            # 插件未启用，直接调用原始方法
+            return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                    episode_group, cache)
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -168,19 +190,41 @@ class MetatubeSource(_PluginBase):
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
                                                 cache: bool = True):
-            """异步劫持系统媒体识别方法（关键字触发模式）"""
+            """
+            异步劫持系统媒体识别方法（关键字优先模式）
+
+            优先级：
+            1. 匹配 metatube 关键词 → 直接由 metatube 处理
+            2. 不匹配关键词 → 交由系统 IMDB 识别
+            3. 系统识别失败 → 最后由 metatube 兜底处理
+            """
             if not plugin_instance._original_async_method:
                 return None
-            # 调用原始方法
-            result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                  episode_group, cache)
-            # 系统识别失败时使用 Metatube 识别
-            if result is None and plugin_instance._enabled:
-                # 检查是否包含关键字
+
+            if plugin_instance._enabled:
+                # 1. 优先检查是否匹配 metatube 关键词
                 if plugin_instance._match_keywords(meta):
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：async_recognize_media ...")
-                    return await plugin_instance.async_recognize_media(meta, mtype)
-            return result
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：async_recognize_media ...")
+                    result = await plugin_instance.async_recognize_media(meta, mtype)
+                    if result:
+                        return result
+                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
+                    logger.debug(f"Metatube 异步识别失败，关键词匹配内容不回退系统识别")
+                    return None
+
+                # 2. 不匹配关键词，交由系统 IMDB 识别
+                result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                                      episode_group, cache)
+                if result:
+                    return result
+
+                # 3. 系统识别也失败，最后由 metatube 兜底处理
+                logger.info(f"系统异步识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：async_recognize_media ...")
+                return await plugin_instance.async_recognize_media(meta, mtype)
+
+            # 插件未启用，直接调用原始方法
+            return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                                episode_group, cache)
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))
@@ -713,6 +757,7 @@ class MetatubeSource(_PluginBase):
                                                     {"component": "th", "text": "时间"},
                                                     {"component": "th", "text": "关键词"},
                                                     {"component": "th", "text": "结果"},
+                                                    {"component": "th", "text": "分类"},
                                                     {"component": "th", "text": "状态"},
                                                     {"component": "th", "text": "详情"}
                                                 ]
@@ -737,12 +782,30 @@ class MetatubeSource(_PluginBase):
         if self._log_entries:
             for log in reversed(list(self._log_entries)):
                 status_color = "success" if log.status == "success" else "error"
+                # 分类颜色
+                category_color = "primary"
+                if "日系" in log.category:
+                    category_color = "pink"
+                elif "欧美" in log.category:
+                    category_color = "blue"
+                elif "中文" in log.category:
+                    category_color = "orange"
                 rows.append({
                     "component": "tr",
                     "content": [
                         {"component": "td", "text": log.timestamp},
                         {"component": "td", "text": log.keyword},
                         {"component": "td", "text": log.result[:30] + "..." if len(log.result) > 30 else log.result},
+                        {
+                            "component": "td",
+                            "content": [
+                                {
+                                    "component": "VChip",
+                                    "props": {"color": category_color, "size": "x-small", "variant": "tonal"},
+                                    "text": log.category or "-"
+                                }
+                            ]
+                        },
                         {
                             "component": "td",
                             "content": [
@@ -805,7 +868,7 @@ class MetatubeSource(_PluginBase):
             "theporndb_api_token": self._theporndb_api_token
         })
 
-    def _add_log(self, keyword: str, result: str, status: str, message: str):
+    def _add_log(self, keyword: str, result: str, status: str, message: str, category: str = ""):
         """添加日志条目"""
         if self._log_entries is None:
             self._log_entries = deque(maxlen=self._max_logs)
@@ -814,6 +877,7 @@ class MetatubeSource(_PluginBase):
             level="INFO" if status == "success" else "WARNING",
             keyword=keyword,
             result=result,
+            category=category,
             status=status,
             message=message
         )
@@ -1198,7 +1262,7 @@ class MetatubeSource(_PluginBase):
             mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
 
             self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          "来源: ThePornDB")
+                          "来源: ThePornDB", category="成人/欧美系")
             logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
 
             return mediainfo
@@ -1238,7 +1302,7 @@ class MetatubeSource(_PluginBase):
             mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
 
             self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          "来源: ThePornDB")
+                          "来源: ThePornDB", category="成人/欧美系")
             logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
 
             return mediainfo
@@ -1292,10 +1356,10 @@ class MetatubeSource(_PluginBase):
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
                 mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系")
+                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
                 return mediainfo
             else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载")
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category="成人/欧美系")
                 return None
 
         try:
@@ -1304,7 +1368,7 @@ class MetatubeSource(_PluginBase):
             if not results:
                 # 识别失败处理
                 failure_msg = "未找到匹配结果" if self._show_failure_detail else "识别失败"
-                self._add_log(number, "", "failed", failure_msg)
+                self._add_log(number, "", "failed", failure_msg, category="")
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
                 # 识别失败直接归类为"成人/其他"并返回
@@ -1320,7 +1384,7 @@ class MetatubeSource(_PluginBase):
                     mediainfo.original_title = number
                     mediainfo.imdb_id = number
                     mediainfo.set_category(category)
-                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory)
+                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory, category=category)
                     return mediainfo
 
                 return None
@@ -1339,16 +1403,21 @@ class MetatubeSource(_PluginBase):
             # 转换为 MediaInfo
             mediainfo = self._convert_to_mediainfo(movie, detail)
 
-            self._add_log(number, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          f"来源: {movie.provider}")
-            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} ({mediainfo.year})")
+            # 获取分类信息
+            title_for_category = movie.title or movie.number or ""
+            subcategory = self._detect_category_type(title_for_category)
+            category = f"成人/{subcategory}"
+
+            self._add_log(number, mediainfo.title, "success",
+                          f"来源: {movie.provider}", category=category)
+            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title}")
 
             return mediainfo
 
         except Exception as e:
             # 异常处理
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            self._add_log(number, "", "failed", failure_msg)
+            self._add_log(number, "", "failed", failure_msg, category="")
             logger.error(f"Metatube: 识别异常 - {str(e)}")
 
             # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
@@ -1364,7 +1433,7 @@ class MetatubeSource(_PluginBase):
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
                 mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory)
+                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory, category=category)
                 return mediainfo
 
             return None
@@ -1414,10 +1483,10 @@ class MetatubeSource(_PluginBase):
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
                 mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系")
+                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
                 return mediainfo
             else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载")
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category="成人/欧美系")
                 return None
 
         try:
@@ -1426,7 +1495,7 @@ class MetatubeSource(_PluginBase):
             if not results:
                 # 识别失败处理
                 failure_msg = "未找到匹配结果" if self._show_failure_detail else "识别失败"
-                self._add_log(number, "", "failed", failure_msg)
+                self._add_log(number, "", "failed", failure_msg, category="")
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
 
                 # 识别失败直接归类为"成人/其他"并返回
@@ -1442,7 +1511,7 @@ class MetatubeSource(_PluginBase):
                     mediainfo.original_title = number
                     mediainfo.imdb_id = number
                     mediainfo.set_category(category)
-                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory)
+                    self._add_log(number, f"{category} ({number})", "success", "识别失败但已归类为" + subcategory, category=category)
                     return mediainfo
 
                 return None
@@ -1461,9 +1530,14 @@ class MetatubeSource(_PluginBase):
             # 转换为 MediaInfo
             mediainfo = self._convert_to_mediainfo(movie, detail)
 
-            self._add_log(number, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          f"来源: {movie.provider}")
-            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} ({mediainfo.year})")
+            # 获取分类信息
+            title_for_category = movie.title or movie.number or ""
+            subcategory = self._detect_category_type(title_for_category)
+            category = f"成人/{subcategory}"
+
+            self._add_log(number, mediainfo.title, "success",
+                          f"来源: {movie.provider}", category=category)
+            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title}")
 
             return mediainfo
 

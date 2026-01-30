@@ -62,6 +62,7 @@ class LogEntry(BaseModel):
     level: str = Field(default="INFO", description="日志级别")
     keyword: str = Field(default="", description="搜索关键词")
     result: str = Field(default="", description="识别结果")
+    category: str = Field(default="", description="分类")
     status: str = Field(default="", description="状态: success/failed")
     message: str = Field(default="", description="详细信息")
 
