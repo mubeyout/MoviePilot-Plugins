@@ -147,41 +147,28 @@ class MetatubeSource(_PluginBase):
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
                                     cache: bool = True):
-            """
-            劫持系统媒体识别方法（关键字优先模式）
-
-            优先级：
-            1. 匹配 metatube 关键词 → 直接由 metatube 处理
-            2. 不匹配关键词 → 交由系统 IMDB 识别
-            3. 系统识别失败 → 最后由 metatube 兜底处理
-            """
+            """劫持系统媒体识别方法（关键字优先模式）"""
             if not plugin_instance._original_method:
                 return None
 
-            if plugin_instance._enabled:
-                # 1. 优先检查是否匹配 metatube 关键词
-                if plugin_instance._match_keywords(meta):
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：recognize_media ...")
-                    result = plugin_instance.recognize_media(meta, mtype)
-                    if result:
-                        return result
-                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
-                    logger.debug(f"Metatube 识别失败，关键词匹配内容不回退系统识别")
-                    return None
-
-                # 2. 不匹配关键词，交由系统 IMDB 识别
-                result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                          episode_group, cache)
-                if result:
-                    return result
-
-                # 3. 系统识别也失败，最后由 metatube 兜底处理
-                logger.info(f"系统识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：recognize_media ...")
+            # 1. 先检查是否匹配 Metatube 关键词
+            if plugin_instance._enabled and plugin_instance._match_keywords(meta):
+                # 匹配 → 直接由 Metatube 处理，失败不回退系统
+                logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：recognize_media ...")
                 return plugin_instance.recognize_media(meta, mtype)
 
-            # 插件未启用，直接调用原始方法
-            return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                    episode_group, cache)
+            # 2. 不匹配 → 交由系统 TMDB 识别
+            result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                      episode_group, cache)
+
+            # 3. 系统失败 → Metatube 兜底（尝试识别未匹配关键词但可能是番号的内容）
+            if result is None and plugin_instance._enabled:
+                number = plugin_instance._extract_number_from_meta(meta)
+                if number:
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 兜底识别：{number} ...")
+                    return plugin_instance.recognize_media(meta, mtype)
+
+            return result
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -190,41 +177,28 @@ class MetatubeSource(_PluginBase):
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
                                                 cache: bool = True):
-            """
-            异步劫持系统媒体识别方法（关键字优先模式）
-
-            优先级：
-            1. 匹配 metatube 关键词 → 直接由 metatube 处理
-            2. 不匹配关键词 → 交由系统 IMDB 识别
-            3. 系统识别失败 → 最后由 metatube 兜底处理
-            """
+            """异步劫持系统媒体识别方法（关键字优先模式）"""
             if not plugin_instance._original_async_method:
                 return None
 
-            if plugin_instance._enabled:
-                # 1. 优先检查是否匹配 metatube 关键词
-                if plugin_instance._match_keywords(meta):
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：async_recognize_media ...")
-                    result = await plugin_instance.async_recognize_media(meta, mtype)
-                    if result:
-                        return result
-                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
-                    logger.debug(f"Metatube 异步识别失败，关键词匹配内容不回退系统识别")
-                    return None
-
-                # 2. 不匹配关键词，交由系统 IMDB 识别
-                result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                      episode_group, cache)
-                if result:
-                    return result
-
-                # 3. 系统识别也失败，最后由 metatube 兜底处理
-                logger.info(f"系统异步识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：async_recognize_media ...")
+            # 1. 先检查是否匹配 Metatube 关键词
+            if plugin_instance._enabled and plugin_instance._match_keywords(meta):
+                # 匹配 → 直接由 Metatube 处理，失败不回退系统
+                logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：async_recognize_media ...")
                 return await plugin_instance.async_recognize_media(meta, mtype)
 
-            # 插件未启用，直接调用原始方法
-            return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                episode_group, cache)
+            # 2. 不匹配 → 交由系统 TMDB 识别
+            result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                                  episode_group, cache)
+
+            # 3. 系统失败 → Metatube 兜底（尝试识别未匹配关键词但可能是番号的内容）
+            if result is None and plugin_instance._enabled:
+                number = plugin_instance._extract_number_from_meta(meta)
+                if number:
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 兜底识别：{number} ...")
+                    return await plugin_instance.async_recognize_media(meta, mtype)
+
+            return result
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))
