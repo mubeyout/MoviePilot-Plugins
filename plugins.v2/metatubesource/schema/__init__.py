@@ -62,5 +62,104 @@ class LogEntry(BaseModel):
     level: str = Field(default="INFO", description="日志级别")
     keyword: str = Field(default="", description="搜索关键词")
     result: str = Field(default="", description="识别结果")
+    category: str = Field(default="", description="分类")
     status: str = Field(default="", description="状态: success/failed")
     message: str = Field(default="", description="详细信息")
+
+
+# ==================== ThePornDB 数据模型 ====================
+# 移植自 Jellyfin.Plugin.ThePornDB
+
+class ThePornDBImage(BaseModel):
+    """ThePornDB 图片"""
+    url: str = Field(default="", description="图片URL")
+    large: str = Field(default="", description="大图URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBSite(BaseModel):
+    """ThePornDB 站点信息"""
+    id: Optional[int] = Field(default=None, description="站点ID")
+    name: str = Field(default="", description="站点名称")
+    logo: str = Field(default="", description="站点Logo")
+    parent_id: Optional[int] = Field(default=None, alias="parent_id", description="父站点ID")
+    network_id: Optional[int] = Field(default=None, alias="network_id", description="网络ID")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBPerformerExtras(BaseModel):
+    """ThePornDB 演员额外信息"""
+    gender: str = Field(default="", description="性别")
+    birthday: str = Field(default="", description="生日")
+    birthplace: str = Field(default="", description="出生地")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBPerformer(BaseModel):
+    """ThePornDB 演员"""
+    uuid: str = Field(default="", description="演员UUID")
+    name: str = Field(default="", description="演员名称")
+    face: str = Field(default="", description="头像URL")
+    image: str = Field(default="", description="图片URL")
+    extras: ThePornDBPerformerExtras = Field(default_factory=ThePornDBPerformerExtras, description="额外信息")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBTag(BaseModel):
+    """ThePornDB 标签"""
+    id: Optional[int] = Field(default=None, description="标签ID")
+    name: str = Field(default="", description="标签名称")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBScene(BaseModel):
+    """ThePornDB 场景搜索结果"""
+    uuid: str = Field(default="", description="场景UUID")
+    title: str = Field(default="", description="标题")
+    slug: str = Field(default="", description="Slug")
+    date: Optional[str] = Field(default=None, description="日期")
+    poster: str = Field(default="", description="海报URL")
+    url: str = Field(default="", description="页面URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBSearchResponse(BaseModel):
+    """ThePornDB 搜索响应"""
+    data: List[ThePornDBScene] = Field(default_factory=list)
+
+
+class ThePornDBSceneDetail(BaseModel):
+    """ThePornDB 场景详情"""
+    uuid: str = Field(default="", description="场景UUID")
+    title: str = Field(default="", description="标题")
+    slug: str = Field(default="", description="Slug")
+    description: str = Field(default="", description="描述")
+    date: Optional[str] = Field(default=None, description="日期")
+    trailer: str = Field(default="", description="预告片URL")
+    duration: Optional[int] = Field(default=None, description="时长(秒)")
+    poster: str = Field(default="", alias="poster", description="海报URL")
+    posters: ThePornDBImage = Field(default_factory=ThePornDBImage, description="海报图片")
+    background: ThePornDBImage = Field(default_factory=ThePornDBImage, description="背景图片")
+    site: ThePornDBSite = Field(default_factory=ThePornDBSite, description="站点信息")
+    performers: List[ThePornDBPerformer] = Field(default_factory=list, description="演员列表")
+    tags: List[ThePornDBTag] = Field(default_factory=list, description="标签列表")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBDetailResponse(BaseModel):
+    """ThePornDB 详情响应"""
+    data: Optional[ThePornDBSceneDetail] = None

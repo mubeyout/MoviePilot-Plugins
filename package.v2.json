@@ -16,13 +16,14 @@
     },
     "metatubesource": {
         "name": "Metatube源",
-        "description": "通过Metatube API识别番号媒体信息。",
+        "description": "通过Metatube API识别番号媒体信息，支持日系/欧美系/中文系自动分类，内置42个排除关键字，支持JSON格式关键字配置文件。",
         "labels": "识别",
-        "version": "1.0.1",
+        "version": "1.1.0",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
         "author": "MUBEY",
         "level": 1,
         "history": {
+            "v1.1.0": "重大更新：修复严重Bug，新增排除关键字功能（内置42个），JSON格式关键字配置，优化配置表单布局，增强分类检测逻辑",
             "v1.0.1": "优化插件配置和识别功能",
             "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
         }
