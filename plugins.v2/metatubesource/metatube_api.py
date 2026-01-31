@@ -114,7 +114,10 @@ class MetatubeApiClient:
 
     def _build_url(self, endpoint: str) -> str:
         """构建完整URL"""
-        return urljoin(self._base_url + '/', endpoint.lstrip('/'))
+        # 确保没有重复的斜杠
+        base = self._base_url.rstrip('/')
+        end = endpoint.lstrip('/')
+        return f"{base}/{end}"
 
     def search(self, keyword: str, fallback: bool = True) -> Optional[List[MetatubeMovie]]:
         """

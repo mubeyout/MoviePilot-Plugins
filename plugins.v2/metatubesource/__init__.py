@@ -30,7 +30,7 @@ class MetatubeSource(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
     # 插件版本
-    plugin_version = "1.0.0"
+    plugin_version = "1.1.0"
     # 插件作者
     plugin_author = "MUBEY"
     # 作者主页
@@ -42,37 +42,414 @@ class MetatubeSource(_PluginBase):
     # 可使用的用户级别
     auth_level = 1
 
+    # ==================== 分类常量 ====================
+    CATEGORY_PREFIX = "成人"
+    SUBCATEGORY_JAPANESE = "日系"
+    SUBCATEGORY_WESTERN = "欧美系"
+    SUBCATEGORY_CHINESE = "中文系"
+    SUBCATEGORY_OTHER = "其他"
+
+    # 关键字配置文件路径
+    KEYWORDS_FILE_PATH = "keywords.json"  # 插件根目录下的 JSON 文件
+
     # 内置关键字库（按分类组织）
-    # 日系关键词
+    # 日系关键词（包含番号前缀、制作商、发行商等）
     BUILT_IN_JAPANESE_KEYWORDS = [
-        "SSIS", "SONE", "MIDV", "STARS", "IPX", "CAWD", "SSIS", "MIDE",
-        "JUL", "VENX", "ADN", "URE", "WAAA", "DLDSS", "JUQ", "MIMK",
-        "FC2", "FC2-PPV", "HEYZO", "CARIB", "CARIBPR", "1PONDO",
-        "PACOPACOMAMA", "H0930", "H4610", "C0930", "SKY", "RED",
-        "MEYD", "MIAA", "ABW", "DOCP", "KTRA", "HMN", "MOODYZ",
-        "OPUD", "KAWD", "OKAX", "SW", "SDMT", "SDDE", "SOE",
-        "一本道", "加勒比", "Tokyo-Hot", "红番区", "Caribbeancom",
-        "10musume", "Pcolle", "Gcolle", "Skyhigh", "Redhot", "JAV",
-        "AVOP", "AVOPEN", "JavHD", "Javbus"
+        # === S1 NO.1 STYLE ===
+        "SSIS", "SONE", "MIDV", "SSIS-", "SONE-", "MIDV-",
+
+        # === IDEAPOCKET ===
+        "IPX", "IPX-",
+
+        # === Moodyz ===
+        "MIAA", "MIDE", "MEYD", "JUL", "JUL-",
+        "MIAD", "MIDD", "MIAE",
+
+        # === Madonna ===
+        "JUQ", "JUQ-", "JUL", "JUL-", "VENX",
+
+        # === Premium ===
+        "CAWD", "CAWD-",
+
+        # === Alice JAPAN ===
+        "ADN", "DLDSS", "DLD",
+
+        # === kawaii* ===
+        "KTRA", "KMHR", "KAWD",
+
+        # === E-BODY ===
+        "EBOD", "EBOD-",
+
+        # === OPPAI ===
+        "PPPE", "PPPD", "OPPAI",
+
+        # === Wanz Factory ===
+        "WANZ", "WAAA",
+
+        # === SOD Create ===
+        "STAR", "STARS", "SDMT", "SDDE", "SOE", "SDNM", "SDAB",
+
+        # === KMP ===
+        "OKAX", "OPUD",
+
+        # === WAAP ===
+        "SW",
+
+        # === ROCK ===
+        "KAWD",
+
+        # === FC2 ===
+        "FC2", "FC2-", "FC2PPV", "FC2-PPV", "PPV",
+
+        # === HEYZO ===
+        "HEYZO", "HEYZO-",
+
+        # === Caribbean ===
+        "CARIB", "CARIBPR", "CARIB-",
+        "062", "063", "082", "083",
+        "Caribbeancom", "Caribbeancompr",
+
+        # === 1PonDo ===
+        "1PONDO", "010115", "010",
+
+        # === PacoPacomaMama ===
+        "PACOPACOMAMA", "PACO",
+
+        # === H0930 ===
+        "H0930",
+
+        # === H4610 ===
+        "H4610",
+
+        # === C0930 ===
+        "C0930",
+
+        # === Sky High Ent ===
+        "SKY", "SKY-", "Sora",
+
+        # === Red Hot ===
+        "RED", "RED-",
+
+        # === Tokyo Hot ===
+        "Tokyo-Hot", "TOKYO-HOT",
+        "n", "k",  # n1234, k1234 格式
+
+        # === JAV通用 ===
+        "JAV", "JavHD", "Javbus", "JAVHub",
+        "AVOP", "AVOPEN",
+
+        # === 其他常见制作商 ===
+        "DOCP", "DOM",
+        "HMN", "HOMA",
+        "URE", "URE-",
+        "MIMK", "MIMK-",
+        "ABW", "ABP",
+
+        # === 中文名称 ===
+        "一本道", "加勒比", "红番区",
+        "10musume", "Pcolle", "Gcolle", "Skyhigh", "Redhot",
+
+        # === 其他番号前缀 ===
+        "BF", "CWP", "SW", "KV", "MXGS", "BKSP", "SUPA"
     ]
 
-    # 欧美系关键词
+    # 欧美系关键词（包含成人网站、工作室等）
     BUILT_IN_WESTERN_KEYWORDS = [
-        "BRAZZERS", "NAUGHTY", "REALITYKINGS", "MOFOS", "TEENSLOVEBLACKCOCKS",
-        "BLACKED", "BLACKEDRAW", "TUSHY", "TUSHYRAW", "VOYEURHIT",
-        "VICAT", "XEV", "Missa", "PervMom", "SisLovesMe",
-        "Pornhub", "Xvideos"
+        # === Brazzers Network ===
+        "BRAZZERS", "BRAZZERS-",
+        "MomXXX", "MomXxx",
+        "BigTitsAtWork", "BigWetButts",
+        "BrazzersEx", "BabyGotBoobs",
+
+        # === Naughty America ===
+        "NAUGHTY", "NAUGHTY-",
+        "NaughtyAmerica", "MyFriendsHotMom",
+        "MySistersHotFriend", "NaughtyBookworms",
+        "Housewife1on1", "MyWifesHotFriend",
+        "MyFirstSexTeacher", "NaughtyOffice",
+
+        # === Reality Kings ===
+        "REALITYKINGS", "RealityKings",
+        "RK", "RK-",
+        "MoneyTalks", "8thStreetLatinas",
+        "EuroSexParties", "GirlsGonePink",
+        "LoveHomePorn", "MonsterCurves",
+        "TopShelfPussy", "WildOnCam",
+
+        # === Mofos ===
+        "MOFOS", "MOFOS-",
+        "Mofos", "CanSheTakeIt",
+        "DontBreakMe", "EFrkt",
+        "GirlsOfDesire", "IKnowThatGirl",
+        "LetsTryAnal", "MofosBSC",
+        "PervsOnPatrol", "PublicAgent",
+        "ShesAFreak", "StrandedTeens",
+
+        # === TeamSkeet ===
+        "TeamSkeet", "TEAMSKEET",
+        "ExxxtraSmall", "TeensLoveBlackCocks",
+        "POVLife", "RubATeen",
+        "She'sNew", "TeenCurves",
+        "TheRealWorkout", "TittyAttack",
+        "TukTukPatrol",
+
+        # === Vixen Media ===
+        "BLACKED", "BLACKEDRAW",
+        "TUSHY", "TUSHYRAW",
+        "VIXEN", "VIXEN-",
+        "Deeper", "Slayed",
+
+        # === BangBros ===
+        "BangBros", "BANG",
+        "BangBrosClips", "AssParade",
+        "BallHoneys", "BigMouthfuls",
+        "BigTitCreamPie", "BlowJobFridays",
+        "BangBus", "BangPOV",
+        "CanHeScore", "Chongas",
+        "DirtyWorldTour", "FacialFest",
+        "FuckTeamFive", "GloryHoleLoads",
+        "LatinaRampage", "LivingWithAnna",
+        "MilfHunter", "MilfLessons",
+        "MomIsHorny", "MonstersOfCock",
+        "PartyOfThree", "Parejas",
+        "PowerMunch", "PrincessCum",
+        "Remaster", "SlutLoad",
+        "StreetBlowjobs", "TugJobs",
+
+        # === Digital Playground ===
+        "DigitalPlayground", "DP",
+        "BlackedDigital", "Digital",
+        "DPFanatics", "DPLingerie",
+
+        # === Evil Angel ===
+        "EvilAngel", "EvilAngel-",
+        "Evil", "Angel",
+
+        # === Jules Jordan ===
+        "JulesJordan", "Jules",
+        "JulesJordanVideo",
+
+        # === Reality King ===
+        "RealityKing",
+
+        # === New Sensations ===
+        "NewSensations",
+
+        # === Pure Taboo ===
+        "PureTaboo", "Pure-",
+
+        # === XEmpire ===
+        "XEmpire", "XEmpire-",
+        "DarkX", "EroticaX",
+        "LesbianX", "HardX",
+
+        # === Girlfriend Films ===
+        "GirlfriendFilms",
+        "GirlfriendsFilms",
+
+        # === Fakedriv ===
+        "Fakehub", "FakeHub-",
+        "FakeTaxi", "FakeAgent",
+        "FemaleAgent", "PublicAgent",
+        "FakeHospital", "FakeCop",
+
+        # === Passion HD ===
+        "PassionHD", "Passion-",
+        "POVD", "Tiny4K",
+        "Cum4K", "Lubed",
+
+        # === 21Sextury ===
+        "21Sextury", "21Sextury-",
+        "21Naturals", "21FootArt",
+        "21Erotica", "AnalTeenAngels",
+
+        # === Dorcel ===
+        "Dorcel", "MarcDorcel",
+        "DorcelClub",
+
+        # === Private ===
+        "Private", "Private-",
+        "PrivateClassics",
+
+        # === Legal Porno ===
+        "LegalPorno", "LegalPorno-",
+        "Gonzo", "AnalOnly",
+
+        # === Others ===
+        "Pornhub", "Pornhub-",
+        "Xvideos", "Xvideos-",
+        "VOYEURHIT", "VICAT",
+        "XEV", "Missa",
+        "PervMom", "SisLovesMe",
+        "Badoink", "Babes",
+        "DorcelVision", "DorcelClub",
+        "MofosNetwork", "BrazzersNetwork",
+        "NaughtyAmericaNetwork", "RealityKingsNetwork"
     ]
 
-    # 中文系关键词
+    # 中文系关键词（包含传媒、制作商等）
     BUILT_IN_CHINESE_KEYWORDS = [
-        "MD", "MX", "MDX", "PMC", "TM", "TW", "AV",
-        "JK", "HT", "约炮", "网红", "探花", "大尺寸", "小宝寻花"
+        # === 麻豆传媒 ===
+        "MD", "MD-", "MDCN",
+        "麻豆", "麻豆傳媒", "MADOU",
+
+        # === 精东传媒 ===
+        "MX", "MX-",
+        "精东", "精東傳媒", "JD传媒",
+
+        # === 天美传媒 ===
+        "TM", "TM-",
+        "天美", "天美傳媒",
+
+        # === 蜜桃传媒 ===
+        "PMC", "PMC-",
+        "蜜桃", "蜜桃傳媒",
+
+        # === 91制片 ===
+        "AV", "AV-",
+        "91制片", "九一制片",
+
+        # === 台湾传媒 ===
+        "TW", "TW-",
+        "台湾", "台灣傳媒",
+
+        # === 其他 ===
+        "JK", "JK-",
+        "HT", "HT-",
+        "MDX", "MDX-",
+        "约炮", "网红", "探花",
+        "大尺寸", "小宝寻花",
+        "传媒", "傳媒",
+        "MDTV"
     ]
 
     # 其他关键词（通用特征）
     BUILT_IN_OTHER_KEYWORDS = [
-        "高清", "无码", "有码", "中文字幕", "原声", "完整版", "流出", "泄露"
+        # === 画质 ===
+        "高清", "超清", "蓝光", "HDRip",
+        "HD", "FHD", "QHD",
+
+        # === 编码类型 ===
+        "无码", "有码", "薄码", "破解",
+        "无修", "有修", "修复版",
+
+        # === 字幕 ===
+        "中文字幕", "中日字幕", "中英字幕",
+        "字幕", "内嵌字幕", "外挂字幕",
+
+        # === 音轨 ===
+        "原声", "原版音轨", "日语原声",
+        "国语", "粤语", "台配",
+
+        # === 版本 ===
+        "完整版", "无删减版", "导演剪辑版",
+        "流出", "泄露", "流出版",
+        "典藏版", "珍藏版", "合集",
+
+        # === 其他特征 ===
+        "独家", "首发", "最新",
+        "成人", "AV", "JAV",
+        "成人视频", "成人电影"
+    ]
+
+    # 内置排除关键字（匹配后直接跳过分类）
+    BUILT_IN_EXCLUDE_KEYWORDS = [
+        # === 画质标记 ===
+        "4K", "UHD", "HDR", "HDR10", "HDR10+", "DOLBY", "DOLBY-VISION",
+        "FHD", "HD", "SD", "LD", "ED",
+
+        # === 分辨率 ===
+        "2160P", "1440P", "1080P", "720P", "480P", "360P", "240P",
+        "3840X2160", "1920X1080", "1280X720",
+        "X264", "X265", "H264", "H265",
+
+        # === 帧率 ===
+        "60FPS", "120FPS", "240FPS", "30FPS", "24FPS",
+        "60FPS", "59.94FPS", "29.97FPS",
+
+        # === 视频编码 ===
+        "H.265", "H.264", "HEVC", "XVID", "DIVX",
+        "X264", "X265", "VC-1", "VP9", "VP8", "AV1", "AVC",
+        "MPEG-2", "MPEG-4", "MPEG4", "MPEG2",
+        "WMV", "RMVB", "RM", "FLV",
+
+        # === 音频编码 ===
+        "AC3", "DTS", "DTS-HD", "DTS-HDMA", "AAC", "FLAC",
+        "MP3", "OPUS", "OGG", "WAV", "MKA",
+        "TRUEHD", "DOLBY-ATMOS", "ATMOS",
+        "EAC3", "DDP", "DD",
+
+        # === 视频格式 ===
+        "REMUX", "WEB-DL", "WEBRIP", "WEB-DL", "WEB",
+        "BLURAY", "BDRIP", "BRRIP", "BD", "DVD",
+        "DVDRIP", "HDDVD", "HDTV", "PDTV",
+        "SATRIP", "TVRIP", "CAM", "TS", "TC",
+        "TELESYNC", "TELECINE",
+
+        # === 文件格式 ===
+        "MKV", "MP4", "AVI", "WMV", "FLV",
+        "MOV", "M4V", "TS", "M2TS",
+        "ISO", "IMG", "DVD5", "DVD9",
+
+        # === 制式 ===
+        "NTSC", "PAL", "SECAM", "SECA",
+
+        # === 分片标记 ===
+        "CD1", "CD2", "CD3", "DISC1", "DISC2", "DISC3",
+        "PART1", "PART2", "PART3",
+        "PT1", "PT2", "PT3",
+
+        # === 来源标记 ===
+        "NETFLIX", "DISNEY+", "HULU", "AMZN",
+        "HBO", "HBO-MAX", "PARAMOUNT+",
+        "APPLE-TV", "APPLE+",
+        "PRIME", "AMAZON",
+        "CRUNCHYROLL", "FUNIMATION",
+
+        # === 发布组 ===
+        "RARBG", "YTS", "YIFY", "FGT",
+        "RARBG", "1337X", "NYAA", "SUKEBEI",
+
+        # === 语言标记 ===
+        "DUAL", "MULTI", "MULTISUBS",
+        "ENGLISH", "JAPANESE", "CHINESE",
+        "EN", "JP", "CN", "ZH",
+        "ENG", "JPN", "CHN", "ZHO",
+
+        # === 版本标记 ===
+        "DIRECTORS-CUT", "EXTENDED", "UNCUT",
+        "UNCENSORED", "UNRATED",
+        "REMASTERED", "REPACK", "PROPER",
+        "LIMITED", "INTERNAL", "NUKED",
+
+        # === 技术参数 ===
+        "10BIT", "8BIT", "HI10P", "HI8P",
+        "HYBRID", "COMPRESS", "RE-ENCODE",
+
+        # === 其他常见标记 ===
+        "SAMPLE", "PROOF", "NFO", "SFV",
+        "SUBS", "SUBPACK", "SUBBED",
+        "DUBBED", "DUAL-AUDIO",
+        "COMPLETE", "FULL", "COMPLETE-SEASON",
+        "SEASON", "S01", "S02", "S03",
+        "EPISODE", "E01", "E02", "E03",
+
+        # === 硬件相关 ===
+        "OLED", "LED", "LCD", "PLASMA",
+        "HDRIP", "SDR", "BT2020", "BT709",
+
+        # === 压缩标记 ===
+        "COMPRESSED", "ENCODED", "RE-ENC",
+        "CRRIP", "DVDR", "R5",
+
+        # === 质量标记 ===
+        "HQ", "LQ", "PDTV", "DSR",
+        "HDTVRIP", "HDTV",
+        "SATRIP", "TVRIP",
+
+        # === 分辨率简写 ===
+        "4K60", "1080P60", "720P60",
+        "4K60FPS", "1080P60FPS", "720P60FPS"
     ]
 
     # ==================== 命名模板预设 ====================
@@ -108,7 +485,7 @@ class MetatubeSource(_PluginBase):
     _clear_logs_flag: bool = False  # 清空日志开关
 
     # 命名规则配置
-    _naming_template: str = "number_actor_studio"  # 默认模板
+    _naming_template: str = "number_actor_year"  # 默认模板调整为 number_actor_year
     _custom_naming_template: str = ""  # 自定义模板
     _max_actors: int = 2  # 最多显示演员数
 
@@ -117,10 +494,12 @@ class MetatubeSource(_PluginBase):
     _custom_western_keywords: str = ""  # 自定义欧美系关键字
     _custom_chinese_keywords: str = ""  # 自定义中文系关键字
     _custom_other_keywords: str = ""  # 自定义其他关键字
+    _exclude_keywords: str = ""  # 排除关键字（逗号分隔）
+    _keywords_file_path: str = "keywords.json"  # 关键字文件路径（固定，不提供UI配置）
     _strict_match: bool = False  # 是否严格匹配
 
-    # 关键字触发模式配置
-    _keyword_failed_download: bool = True  # 识别失败直接下载
+    # 识别失败控制
+    _failed_download_control: bool = True  # 识别失败后是否执行下载（新配置项）
 
     # 通用配置
     _show_failure_detail: bool = True  # 识别失败提示开关
@@ -147,28 +526,41 @@ class MetatubeSource(_PluginBase):
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
                                     cache: bool = True):
-            """劫持系统媒体识别方法（关键字优先模式）"""
+            """
+            劫持系统媒体识别方法（关键字优先模式）
+
+            优先级：
+            1. 匹配 metatube 关键词 → 直接由 metatube 处理
+            2. 不匹配关键词 → 交由系统 IMDB 识别
+            3. 系统识别失败 → 最后由 metatube 兜底处理
+            """
             if not plugin_instance._original_method:
                 return None
 
-            # 1. 先检查是否匹配 Metatube 关键词
-            if plugin_instance._enabled and plugin_instance._match_keywords(meta):
-                # 匹配 → 直接由 Metatube 处理，失败不回退系统
-                logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：recognize_media ...")
+            if plugin_instance._enabled:
+                # 1. 优先检查是否匹配 metatube 关键词
+                if plugin_instance._match_keywords(meta):
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：recognize_media ...")
+                    result = plugin_instance.recognize_media(meta, mtype)
+                    if result:
+                        return result
+                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
+                    logger.debug(f"Metatube 识别失败，关键词匹配内容不回退系统识别")
+                    return None
+
+                # 2. 不匹配关键词，交由系统 IMDB 识别
+                result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                          episode_group, cache)
+                if result:
+                    return result
+
+                # 3. 系统识别也失败，最后由 metatube 兜底处理
+                logger.info(f"系统识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：recognize_media ...")
                 return plugin_instance.recognize_media(meta, mtype)
 
-            # 2. 不匹配 → 交由系统 TMDB 识别
-            result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                      episode_group, cache)
-
-            # 3. 系统失败 → Metatube 兜底（尝试识别未匹配关键词但可能是番号的内容）
-            if result is None and plugin_instance._enabled:
-                number = plugin_instance._extract_number_from_meta(meta)
-                if number:
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 兜底识别：{number} ...")
-                    return plugin_instance.recognize_media(meta, mtype)
-
-            return result
+            # 插件未启用，直接调用原始方法
+            return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                    episode_group, cache)
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -177,28 +569,41 @@ class MetatubeSource(_PluginBase):
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
                                                 cache: bool = True):
-            """异步劫持系统媒体识别方法（关键字优先模式）"""
+            """
+            异步劫持系统媒体识别方法（关键字优先模式）
+
+            优先级：
+            1. 匹配 metatube 关键词 → 直接由 metatube 处理
+            2. 不匹配关键词 → 交由系统 IMDB 识别
+            3. 系统识别失败 → 最后由 metatube 兜底处理
+            """
             if not plugin_instance._original_async_method:
                 return None
 
-            # 1. 先检查是否匹配 Metatube 关键词
-            if plugin_instance._enabled and plugin_instance._match_keywords(meta):
-                # 匹配 → 直接由 Metatube 处理，失败不回退系统
-                logger.info(f"通过插件 {MetatubeSource.plugin_name} 执行：async_recognize_media ...")
+            if plugin_instance._enabled:
+                # 1. 优先检查是否匹配 metatube 关键词
+                if plugin_instance._match_keywords(meta):
+                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 关键词匹配，优先执行：async_recognize_media ...")
+                    result = await plugin_instance.async_recognize_media(meta, mtype)
+                    if result:
+                        return result
+                    # metatube 识别失败，不再回退系统识别（因为已匹配关键词，应由 metatube 全权处理）
+                    logger.debug(f"Metatube 异步识别失败，关键词匹配内容不回退系统识别")
+                    return None
+
+                # 2. 不匹配关键词，交由系统 IMDB 识别
+                result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                                      episode_group, cache)
+                if result:
+                    return result
+
+                # 3. 系统识别也失败，最后由 metatube 兜底处理
+                logger.info(f"系统异步识别失败，通过插件 {MetatubeSource.plugin_name} 兜底执行：async_recognize_media ...")
                 return await plugin_instance.async_recognize_media(meta, mtype)
 
-            # 2. 不匹配 → 交由系统 TMDB 识别
-            result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                  episode_group, cache)
-
-            # 3. 系统失败 → Metatube 兜底（尝试识别未匹配关键词但可能是番号的内容）
-            if result is None and plugin_instance._enabled:
-                number = plugin_instance._extract_number_from_meta(meta)
-                if number:
-                    logger.info(f"通过插件 {MetatubeSource.plugin_name} 兜底识别：{number} ...")
-                    return await plugin_instance.async_recognize_media(meta, mtype)
-
-            return result
+            # 插件未启用，直接调用原始方法
+            return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
+                                                                episode_group, cache)
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))
@@ -234,6 +639,14 @@ class MetatubeSource(_PluginBase):
             # ThePornDB 配置
             self._theporndb_enabled = bool(config.get("theporndb_enabled") or False)
             self._theporndb_api_token = config.get("theporndb_api_token") or ""
+            # 新增配置项
+            self._exclude_keywords = config.get("exclude_keywords") or ""
+            self._keywords_file_path = "keywords.json"  # 固定路径，不再提供配置
+            self._failed_download_control = bool(config.get("failed_download_download") if config.get("failed_download_control") is not None else True)
+            # 兼容旧配置项
+            if config.get("keyword_failed_download") is not None:
+                self._failed_download_control = bool(config.get("keyword_failed_download"))
+
             # 更新日志队列大小
             if self._log_entries and self._log_entries.maxlen != self._max_logs:
                 old_logs = list(self._log_entries)
@@ -259,6 +672,12 @@ class MetatubeSource(_PluginBase):
             api_token=self._theporndb_api_token,
             timeout=self._timeout
         )
+
+        # 验证配置有效性
+        self._validate_config()
+
+        # 加载关键字文件（如果存在）
+        self._load_keywords_from_file()
 
         if self._enabled:
             # 关键字触发模式：系统识别失败后接管，只处理包含关键字的内容
@@ -378,7 +797,7 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "VSwitch",
                                         "props": {
-                                            "model": "keyword_failed_download",
+                                            "model": "failed_download_control",
                                             "label": "失败自动下载",
                                             "hint": "识别失败时归类为'成人'并自动下载"
                                         }
@@ -646,6 +1065,27 @@ class MetatubeSource(_PluginBase):
                                 "props": {"cols": 12},
                                 "content": [
                                     {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "exclude_keywords",
+                                            "label": "排除关键词",
+                                            "placeholder": "4K, UHD, HDR, FHD, HD, 2160P, 1080P, 720P, 60FPS, H.265, H.264, HEVC, XVID, WEB-DL, REMUX, BLURAY...",
+                                            "rows": 3,
+                                            "hint": "匹配后直接跳过分类的关键词（画质标记、分辨率、编码格式等），逗号分隔。内置42个排除关键字：4K/UHD/HDR/FHD/HD/SD/2160P/1080P/720P/480P/360P/60FPS/120FPS/240FPS/H.265/H.264/HEVC/XVID/X264/X265/VC-1/VP9/AV1/AC3/DTS/AAC/FLAC/REMUX/WEB-DL/WEBRIP/BLURAY/NTSC/PAL/SECA/CD1/CD2/DISC1/DISC2"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
                                         "component": "VAlert",
                                         "props": {
                                             "type": "info",
@@ -671,6 +1111,18 @@ class MetatubeSource(_PluginBase):
                                                     {
                                                         "component": "p",
                                                         "text": "• 优先级：日系 > 欧美系 > 中文系 > 其他（匹配到第一个即停止）"
+                                                    },
+                                                    {
+                                                        "component": "p",
+                                                        "text": "• 排除关键字：配置排除关键字后，匹配到的内容将跳过分类"
+                                                    },
+                                                    {
+                                                        "component": "p",
+                                                        "text": "• 关键字文件：支持从 keywords.json 文件加载关键字配置（文件位于插件根目录）"
+                                                    },
+                                                    {
+                                                        "component": "p",
+                                                        "text": "• 失败控制：识别失败时可选择自动归类并下载，或终止流程"
                                                     }
                                                 ]
                                             }
@@ -691,9 +1143,15 @@ class MetatubeSource(_PluginBase):
             "custom_western_keywords": "",
             "custom_chinese_keywords": "",
             "custom_other_keywords": "",
+            "exclude_keywords": "",
             "strict_match": False,
-            "keyword_failed_download": True,
+            "failed_download_control": True,
+            "keyword_failed_download": True,  # 兼容旧配置
             "show_failure_detail": True,
+            "clear_logs_flag": False,
+            "naming_template": "number_actor_year",
+            "custom_naming_template": "",
+            "max_actors": 2,
             "theporndb_enabled": False,
             "theporndb_api_token": ""
         }
@@ -820,6 +1278,79 @@ class MetatubeSource(_PluginBase):
         # 已移除劫持模式，返回空
         return {}
 
+    def _validate_config(self) -> bool:
+        """验证配置有效性"""
+        validated = True
+
+        # 验证超时时间
+        if self._timeout < 1 or self._timeout > 300:
+            logger.warning(f"Metatube: timeout 超出范围(1-300): {self._timeout}，已自动调整为30秒")
+            self._timeout = 30
+            validated = False
+
+        # 验证最大演员数
+        if self._max_actors < 1:
+            logger.warning(f"Metatube: max_actors 必须大于0: {self._max_actors}，已自动调整为1")
+            self._max_actors = 1
+            validated = False
+
+        # 验证 API URL 格式
+        if self._api_url and not self._api_url.startswith(('http://', 'https://')):
+            logger.error(f"Metatube: API URL 格式错误: {self._api_url}，已使用默认值")
+            self._api_url = "http://127.0.0.1:8080"
+            validated = False
+
+        # 验证 ThePornDB Token
+        if self._theporndb_enabled and not self._theporndb_api_token:
+            logger.warning("Metatube: ThePornDB 已启用但未配置 API Token")
+
+        return validated
+
+    def _load_keywords_from_file(self):
+        """从 JSON 文件加载关键字配置"""
+        try:
+            import json
+            from pathlib import Path
+
+            # 支持相对路径和绝对路径
+            if not Path(self._keywords_file_path).is_absolute():
+                # 相对于插件根目录
+                plugin_dir = Path(__file__).parent
+                keywords_file = plugin_dir / self._keywords_file_path
+            else:
+                keywords_file = Path(self._keywords_file_path)
+
+            if not keywords_file.exists():
+                logger.debug(f"Metatube: 关键字配置文件不存在: {keywords_file}，使用内置关键字")
+                return
+
+            # 读取 JSON 文件
+            with open(keywords_file, 'r', encoding='utf-8') as f:
+                keywords_config = json.load(f)
+
+                # 加载各分类关键字
+                if 'japanese' in keywords_config and isinstance(keywords_config['japanese'], list):
+                    self._custom_japanese_keywords = ','.join(keywords_config['japanese'])
+                if 'western' in keywords_config and isinstance(keywords_config['western'], list):
+                    self._custom_western_keywords = ','.join(keywords_config['western'])
+                if 'chinese' in keywords_config and isinstance(keywords_config['chinese'], list):
+                    self._custom_chinese_keywords = ','.join(keywords_config['chinese'])
+                if 'other' in keywords_config and isinstance(keywords_config['other'], list):
+                    self._custom_other_keywords = ','.join(keywords_config['other'])
+                if 'exclude' in keywords_config and isinstance(keywords_config['exclude'], list):
+                    self._exclude_keywords = ','.join(keywords_config['exclude'])
+
+                logger.info(f"Metatube: 已从 {keywords_file} 加载关键字配置")
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Metatube: 关键字配置文件 JSON 格式错误: {str(e)}")
+        except Exception as e:
+            logger.error(f"Metatube: 加载关键字配置文件失败: {str(e)}")
+
+    def _build_category(self, subcategory: str) -> str:
+        """构建分类字符串"""
+        return f"{self.CATEGORY_PREFIX}/{subcategory}"
+
     def _update_config(self):
         """更新配置"""
         self.update_config({
@@ -831,8 +1362,10 @@ class MetatubeSource(_PluginBase):
             "custom_western_keywords": self._custom_western_keywords,
             "custom_chinese_keywords": self._custom_chinese_keywords,
             "custom_other_keywords": self._custom_other_keywords,
+            "exclude_keywords": self._exclude_keywords,
             "strict_match": self._strict_match,
-            "keyword_failed_download": self._keyword_failed_download,
+            "failed_download_control": self._failed_download_control,
+            "keyword_failed_download": self._failed_download_control,  # 兼容旧配置名
             "show_failure_detail": self._show_failure_detail,
             "clear_logs_flag": self._clear_logs_flag,
             "naming_template": self._naming_template,
@@ -881,7 +1414,27 @@ class MetatubeSource(_PluginBase):
             custom_list = [kw.strip() for kw in self._custom_other_keywords.split(',') if kw.strip()]
             keywords.extend(custom_list)
 
-        return list(set(keywords))  # 去重
+        # 去重并返回
+        return list(set(keywords))
+
+    def _get_exclude_keywords(self) -> List[str]:
+        """获取排除关键字列表（内置 + 自定义）"""
+        exclude_keywords = []
+
+        # 添加内置排除关键字
+        exclude_keywords.extend(self.BUILT_IN_EXCLUDE_KEYWORDS)
+
+        # 添加自定义排除关键字
+        if self._exclude_keywords:
+            custom_list = [kw.strip() for kw in self._exclude_keywords.split(',') if kw.strip()]
+            exclude_keywords.extend(custom_list)
+
+        # 标准化（非严格模式转大写）
+        if not self._strict_match:
+            exclude_keywords = [kw.upper() for kw in exclude_keywords]
+
+        # 去重并返回
+        return list(set(exclude_keywords))
 
     def _detect_category_type(self, title: str) -> str:
         """
@@ -891,7 +1444,16 @@ class MetatubeSource(_PluginBase):
         :return: 二级分类名称：日系/欧美系/中文系/其他
         """
         if not title:
-            return "其他"
+            return self.SUBCATEGORY_OTHER
+
+        # 检查排除关键字
+        exclude_keywords = self._get_exclude_keywords()
+        if exclude_keywords:
+            search_title = title.upper() if not self._strict_match else title
+            for exclude_kw in exclude_keywords:
+                if exclude_kw in search_title:
+                    logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过分类: {title}")
+                    return self.SUBCATEGORY_OTHER
 
         # 标准化标题
         search_title = title
@@ -901,10 +1463,10 @@ class MetatubeSource(_PluginBase):
 
         # 按优先级检测：日系 > 欧美系 > 中文系 > 其他
         categories = [
-            ("日系", self.BUILT_IN_JAPANESE_KEYWORDS, self._custom_japanese_keywords),
-            ("欧美系", self.BUILT_IN_WESTERN_KEYWORDS, self._custom_western_keywords),
-            ("中文系", self.BUILT_IN_CHINESE_KEYWORDS, self._custom_chinese_keywords),
-            ("其他", self.BUILT_IN_OTHER_KEYWORDS, self._custom_other_keywords),
+            (self.SUBCATEGORY_JAPANESE, self.BUILT_IN_JAPANESE_KEYWORDS, self._custom_japanese_keywords),
+            (self.SUBCATEGORY_WESTERN, self.BUILT_IN_WESTERN_KEYWORDS, self._custom_western_keywords),
+            (self.SUBCATEGORY_CHINESE, self.BUILT_IN_CHINESE_KEYWORDS, self._custom_chinese_keywords),
+            (self.SUBCATEGORY_OTHER, self.BUILT_IN_OTHER_KEYWORDS, self._custom_other_keywords),
         ]
 
         for category_name, built_in_keywords, custom_keywords in categories:
@@ -924,7 +1486,7 @@ class MetatubeSource(_PluginBase):
                         logger.debug(f"Metatube: 匹配到{category_name}自定义关键字 '{keyword}' 在标题 '{title}' 中")
                         return category_name
 
-        return "其他"
+        return self.SUBCATEGORY_OTHER
 
     def _match_keywords(self, meta: MetaBase) -> bool:
         """
@@ -941,6 +1503,9 @@ class MetatubeSource(_PluginBase):
         if not keywords:
             return False
 
+        # 获取排除关键字
+        exclude_keywords = self._get_exclude_keywords()
+
         # 获取标题（优先级：原始名称 > 中文名 > 英文名）
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
         if not title:
@@ -952,11 +1517,18 @@ class MetatubeSource(_PluginBase):
             title = title.upper()
             title = title.replace('－', '-').replace('＿', '_')
             keywords = [kw.upper() for kw in keywords]
+            exclude_keywords = [kw.upper() for kw in exclude_keywords]
+
+        # 先检查排除关键字
+        for exclude_kw in exclude_keywords:
+            if exclude_kw in title:
+                logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过: {title}")
+                return False
 
         # 检查是否包含任意关键字
         for keyword in keywords:
             if keyword in title:
-                logger.debug(f"Metatube: 匹配到关键字 '{keyword}' 在标题 '{title}' 中")
+                logger.info(f"Metatube: 匹配到关键字 '{keyword}' 在标题 '{title}' 中")
                 return True
 
         return False
@@ -1134,7 +1706,7 @@ class MetatubeSource(_PluginBase):
         # 检测二级分类
         title = movie.title or movie.number or ""
         subcategory = self._detect_category_type(title)
-        category = f"成人/{subcategory}"
+        category = self._build_category(subcategory)
 
         # 设置分类（使用二级分类）
         mediainfo.set_category(category)
@@ -1236,7 +1808,7 @@ class MetatubeSource(_PluginBase):
             mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
 
             self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          "来源: ThePornDB", category="成人/欧美系")
+                          "来源: ThePornDB", category=self._build_category(self.SUBCATEGORY_WESTERN))
             logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
 
             return mediainfo
@@ -1276,7 +1848,7 @@ class MetatubeSource(_PluginBase):
             mediainfo = self._convert_theporndb_to_mediainfo(scene, detail)
 
             self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
-                          "来源: ThePornDB", category="成人/欧美系")
+                          "来源: ThePornDB", category=self._build_category(self.SUBCATEGORY_WESTERN))
             logger.info(f"ThePornDB: 识别成功 - {title} -> {mediainfo.title} ({mediainfo.year})")
 
             return mediainfo
@@ -1320,8 +1892,8 @@ class MetatubeSource(_PluginBase):
                 return result
             # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
             logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
-            if self._keyword_failed_download:
-                category = "成人/欧美系"
+            if self._failed_download_control:
+                category = self._build_category(self.SUBCATEGORY_WESTERN)
                 logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'theporndb'
@@ -1333,7 +1905,7 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
                 return mediainfo
             else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category="成人/欧美系")
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category=self._build_category(self.SUBCATEGORY_WESTERN))
                 return None
 
         try:
@@ -1394,11 +1966,11 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, "", "failed", failure_msg, category="")
             logger.error(f"Metatube: 识别异常 - {str(e)}")
 
-            # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
-            if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+            # 识别异常处理：关键字触发模式下归类为"成人/其他"
+            if self._failed_download_control:
                 # 检测分类
                 subcategory = self._detect_category_type(number)
-                category = f"成人/{subcategory}"
+                category = self._build_category(subcategory)
                 logger.info(f"Metatube: 关键字触发模式识别异常，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'metatube'
@@ -1447,8 +2019,8 @@ class MetatubeSource(_PluginBase):
                 return result
             # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
             logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
-            if self._keyword_failed_download:
-                category = "成人/欧美系"
+            if self._failed_download_control:
+                category = self._build_category(self.SUBCATEGORY_WESTERN)
                 logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'theporndb'
@@ -1460,7 +2032,7 @@ class MetatubeSource(_PluginBase):
                 self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
                 return mediainfo
             else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category="成人/欧美系")
+                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category=self._build_category(self.SUBCATEGORY_WESTERN))
                 return None
 
         try:
@@ -1518,11 +2090,11 @@ class MetatubeSource(_PluginBase):
         except Exception as e:
             # 异常处理
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            self._add_log(number, "", "failed", failure_msg)
+            self._add_log(number, "", "failed", failure_msg, category="")
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
 
-            # 关键字触发模式：识别异常直接归类为"成人/其他"并返回
-            if self._recognition_mode == 'keyword' and self._keyword_failed_download:
+            # 异常处理：关键字触发模式下归类为"成人/其他"
+            if self._keyword_failed_download:
                 # 检测分类
                 subcategory = self._detect_category_type(number)
                 category = f"成人/{subcategory}"
@@ -1534,7 +2106,7 @@ class MetatubeSource(_PluginBase):
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
                 mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory)
+                self._add_log(number, f"{category} ({number})", "success", "识别异常但已归类为" + subcategory, category=category)
                 return mediainfo
 
             return None

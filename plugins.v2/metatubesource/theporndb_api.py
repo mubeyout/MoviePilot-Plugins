@@ -64,7 +64,10 @@ class ThePornDBApiClient:
 
     def _build_url(self, endpoint: str) -> str:
         """构建完整URL"""
-        return urljoin(self.API_BASE_URL + '/', endpoint.lstrip('/'))
+        # 确保没有重复的斜杠
+        base = self.API_BASE_URL.rstrip('/')
+        end = endpoint.lstrip('/')
+        return f"{base}/{end}"
 
     def search_scenes(self, search_title: str, year: int = None,
                       oshash: str = "") -> Optional[List[ThePornDBScene]]:
