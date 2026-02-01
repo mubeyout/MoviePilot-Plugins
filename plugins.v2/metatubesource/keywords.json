@@ -1,7 +1,7 @@
 {
   "categories": {
     "japanese": [
-      #==主流番号前缀==
+      "#==主流番号前缀==",
       "ATOM", "DVA", "HAVD", "HODV", "JFB", "JUY", "JUX",
       "MIGD", "MIRD", "MUKC", "MUKD", "NACR", "NHDTB",
       "OKS", "OKAX", "PGD", "PGD-", "RBD", "RCT",
@@ -14,14 +14,14 @@
       "MIMK-", "ABW", "ABP", "BKSP", "BF", "CWP",
       "KV", "MXGS", "SUPA", "MIDV-", "ADN-", "EBOD-",
       "WANZ-", "STAR-", "FC2-",
-      #==数字编号系列==
+      "#==数字编号系列==",
       "062", "063", "082", "083",
-      #==民营网站==的关键字
+      "#==民营网站==",
       "CARIBPR", "010115", "010", "PACO", "H0930",
       "H4610", "C0930", "SKY-", "Sora", "RED-",
-      #==大型企划==
+      "#==大型企划==",
       "AVOP", "AVOPEN", "Pcolle", "Gcolle",
-      #==知名片商==
+      "#==知名片商==",
       "Skyhigh", "Redhot", "SODCreate", "KMP", "WAAP",
       "ROCK", "Prestige", "PRESTIGE", "Momojiri", "Muteki",
       "KM Produce", "H.m.p", "Aroma", "Aurora", "Befree",
@@ -44,29 +44,29 @@
       "Toy", "Tribe", "U", "U&K", "V", "Venus", "Vibe",
       "Video", "Village", "Vinl", "Virtua", "W", "Waap",
       "Wild", "Wolf", "X",
-      #==大厂商标识==
+      "#==大厂商标识==",
       "Moodyz", "MOODYZ", "IdeaPocket", "IDEAPOCKET",
       "S1NO1STYLE", "AliceJapan", "E-BODY", "OPPAI", "Wanz",
-      #==中文标识==
+      "#==中文标识==",
       "アダルト", "成人動画", "ポルノ", "エロ",
-      #==体型特征==
+      "#==体型特征==",
       "巨乳", "貧乳", "美乳", "爆乳",
-      #==角色类型==
+      "#==角色类型==",
       "美少女", "熟女", "人妻",
-      #==性行为==
+      "#==性行为==",
       "中出し", "フェラ", "クンニ", "3P", "4P", "乱交",
-      #==特殊题材==
+      "#==特殊题材==",
       "レイプ", "痴漢", "盗撮", "拘束", "調教", "羞恥",
       "潮吹き", "失禁", "放尿", "ごっくん", "顔射", "発射",
-      #==场所/服务==
+      "#==场所/服务==",
       "泡泡浴", "ソープランド",
-      #==VR相关==
+      "#==VR相关==",
       "VR", "VR-", "CV", "CVS", "DANDY", "VRVR",
       "3DVR", "VR视频", "虚拟现实",
-      #==特殊标签==
+      "#==特殊标签==",
       "変態", "スカトロ", "ロリ", "ショタ", "妊婦", "孕ませ",
       "肉便器", "群交", "輪姦", "牝奴隷",
-      #==知名演员==
+      "#==知名演员==",
       "三上悠亜", "三上悠亚", "Yua Mikami",
       "深田詠美", "深田えみみ", "Eimi Fukada",
       "波多野结衣", "Yui Hatano",
@@ -93,7 +93,7 @@
       "蓮実クレア", "Claire Kudo",
       "清水健", "Shimiken",
       "鳳親", "Otori Chika",
-      #==更多番号前缀==
+      "#==更多番号前缀==",
       "CAWD", "DOCP", "OPUD", "MEYD", "MIAA", "MIAD",
       "MIDD", "HND", "HUNTB", "IPZZ", "JUFE", "LULU",
       "MGOLD", "MSFH", "MVSD", "NKKD", "NSFS", "PRED",
@@ -109,7 +109,7 @@
       "TPPN", "TYSF", "UMSO", "URKK", "VAGU", "VOSS",
       "WAWA", "YUJ", "ZMAR", "START", "MIAB", "MIAB-",
       "MIDA-", "EBWH",
-      #==日文片商==
+      "#==日文片商==",
       "プレステージ", "アイデアポケット", "エスワン",
       "ムーディーズ", "マドンナ", "アタッカーズ",
       "SODクリエイト", "SODstar", "イーボディ", "ワンズファクトリー",
@@ -130,7 +130,7 @@
       "ONCE", "ONEZ", "LAFBD", "SSNI", "ABP", "IPX",
       "SMBD", "DASS", "CAWD", "IPZZ", "FSDSS", "SSIS",
       "FSDSS-",
-      #==更多演员==
+      "#==更多演员==",
       "Remu Suzumori", "Ama Sena", "Yume Hoshino",
       "Hana Shirato", "Ichika Matsumoto", "Yu Kawakami",
       "Riho Fujimori", "Yua Aida", "Kyōko Aizome",
@@ -154,7 +154,7 @@
       "Mao Asada", "Nana Komatsu", "Tao Tsuchiya",
       "Mitsuki Takahata", "Tsubasa Honda", "Masami Nagasawa",
       "Aoi Miyazaki",
-      #==其他标签==
+      "#==其他标签==",
       "マゾ", "奴隷", "種付け",
       "Seto Kanna", "Kanna Seto", "Ichika Matsumoto",
       "Misono Waka", "Waka Misono", "Miyu Aizawa",
@@ -166,7 +166,7 @@
       "Haruka Riri", "Yuu Tano", "Minamo"
     ],
     "western": [
-      #==Brazzers系列==
+      "#==Brazzers系列==",
       "MomXXX", "MomXxx", "BigTitsAtWork", "BigWetButts",
       "BrazzersEx", "BabyGotBoobs", "MyFriendsHotMom",
       "MySistersHotFriend", "NaughtyBookworms", "Housewife1on1",
@@ -174,7 +174,7 @@
       "MommyGotBoobs", "RealWifeStories", "ZZSeries",
       "BrazzersExxtra", "HotAndMean", "MeanBitches",
       "BRAZZERS", "BRAZZERS-", "BrazzersNetwork",
-      #==RealityKings系列==
+      "#==RealityKings系列==",
       "REALITYKINGS", "RealityKings", "RK", "RK-",
       "MoneyTalks", "8thStreetLatinas", "EuroSexParties",
       "GirlsGonePink", "LoveHomePorn", "MonsterCurves",
@@ -182,18 +182,18 @@
       "BigNaturals", "SneakySex", "WeLiveTogether",
       "MomsBangTeens", "TeensLoveAnal", "ShareMyBF",
       "RealityKingsNetwork",
-      #==Mofos系列==
+      "#==Mofos系列==",
       "Mofos", "CanSheTakeIt", "DontBreakMe", "EFrkt",
       "GirlsOfDesire", "IKnowThatGirl", "LetsTryAnal",
       "MofosBSC", "PervsOnPatrol", "PublicAgent",
       "ShesAFreak", "StrandedTeens", "MofosNetwork",
-      #==TeamSkeet系列==
+      "#==TeamSkeet系列==",
       "TeamSkeet", "TEAMSKEET", "ExxxtraSmall",
       "TeensLoveBlackCocks", "POVLife", "RubATeen",
       "She'sNew", "TeenCurves", "TheRealWorkout",
       "TittyAttack", "TukTukPatrol", "TeensDoPorn",
       "POVThis", "Thickumz", "BFFs", "Dyked",
-      #==BangBros系列==
+      "#==BangBros系列==",
       "BangBrosClips", "AssParade", "BallHoneys",
       "BigMouthfuls", "BigTitCreamPie", "BlowJobFridays",
       "BangBus", "BangPOV", "CanHeScore", "Chongas",
@@ -203,35 +203,35 @@
       "MonstersOfCock", "PartyOfThree", "Parejas",
       "PowerMunch", "PrincessCum", "Remaster", "SlutLoad",
       "StreetBlowjobs", "TugJobs", "BangBros", "BANG",
-      #==Vixen Media系列==
+      "#==Vixen Media系列==",
       "BlackedDigital", "BLACKED", "BLACKEDRAW",
       "TUSHY", "TUSHYRAW", "VIXEN", "VIXEN-",
       "Deeper", "Slayed",
-      #==XEmpire系列==
+      "#==XEmpire系列==",
       "XEmpire", "XEmpire-", "DarkX", "EroticaX",
       "LesbianX", "HardX",
-      #==FakeHub系列==
+      "#==FakeHub系列==",
       "Fakehub", "FakeHub-", "FakeTaxi", "FakeAgent",
       "FemaleAgent", "FakeHospital", "FakeCop",
-      #==PassionHD系列==
+      "#==PassionHD系列==",
       "PassionHD", "Passion-", "POVD", "Tiny4K",
       "Cum4K", "Lubed",
-      #==21Sextury系列==
+      "#==21Sextury系列==",
       "21Sextury", "21Sextury-", "21Naturals",
       "21FootArt", "21Erotica", "AnalTeenAngels",
-      #==其他工作室==
+      "#==其他工作室==",
       "DPFanatics", "DPLingerie", "JulesJordanVideo",
       "RealityKing", "NewSensations", "GirlfriendFilms",
       "GirlfriendsFilms", "Dorcel", "MarcDorcel",
       "DorcelClub", "Private", "Private-", "PrivateClassics",
       "LegalPorno", "LegalPorno-", "Gonzo", "AnalOnly",
-      #==成人网站==
+      "#==成人网站==",
       "VOYEURHIT", "VICAT", "XEV", "Missa", "PervMom",
       "SisLovesMe", "Badoink", "Babes", "DorcelVision",
       "MofosNetwork", "BrazzersNetwork", "NaughtyAmericaNetwork",
-      #==NaughtyAmerica系列==
+      "#==NaughtyAmerica系列==",
       "NAUGHTY", "NAUGHTY-", "NaughtyAmerica",
-      #==更多系列==
+      "#==更多系列==",
       "Pornhub", "Pornhub-", "Xvideos", "Xvideos-",
       "DigitalPlayground", "DP", "Digital", "EvilAngel",
       "EvilAngel-", "Evil", "Angel", "JulesJordan", "Jules",
@@ -239,29 +239,29 @@
       "NubileFilms", "AllGirlMassage", "GirlsWay",
       "WebYoung", "MommysGirl", "AdultTime", "BurningAngel",
       "SweetheartVideo", "SweetSinner", "MileHighMedia",
-      #==Dogfart系列==
+      "#==Dogfart系列==",
       "Dogfart", "BlacksOnBlondes", "CuckoldSessions",
       "WatchingMyMomGoBlack", "InterracialPickups", "Gloryhole",
       "WeFuckBlackGirls",
-      #==ScoreGroup系列==
+      "#==ScoreGroup系列==",
       "ScoreGroup", "Scoreland", "XLGirls", "NaughtyMag",
       "LegSex", "40SomethingMag", "50PlusMilfs", "60PlusMilfs",
-      #==Penthouse系列==
+      "#==Penthouse系列==",
       "Penthouse", "PenthouseGold", "Twistys", "Twistys-",
       "WhenGirlsPlay", "Twisty's",
-      #==AdultTime系列==
+      "#==AdultTime系列==",
       "Girlsway", "MomsTeachSex", "NubilesET",
       "StepSiblingsCaught", "MyFamilyPies", "BrattySis",
       "SisSwap", "DaughterSwap", "DadCrush", "SpyFam",
       "FamilyStrokes", "FosterTapes", "Shoplyfter",
       "ShoplyfterMylf",
-      #==Mylf系列==
+      "#==Mylf系列==",
       "Mylf", "Milfed", "MomSwap", "MomsBoyToy",
       "AnalMom", "GotMylf", "MylfX", "MYLFWOOD", "MYLFED",
-      #==CzechAV系列==
+      "#==CzechAV系列==",
       "CzechCasting", "CzechAV", "CzechStreets", "CzechTaxi",
       "CzechMassage", "CzechWifeSwap", "PublicPickups",
-      #==更多系列==
+      "#==更多系列==",
       "TeensLoveHugeCocks", "GFLeaks", "InnocentHigh",
       "TeenPies", "OyeLoca", "ThisGirlSucks",
       "FamilyTherapy", "PervTherapy", "PervDoctor",
@@ -272,14 +272,14 @@
       "LezBeBad", "Mommy'sBoy", "Mommy'sGirl",
       "My BabySitters Club", "Brat Tamer", "TeamSkeet X My Milfz",
       "Pervz", "MILFY", "Wifey",
-      #==通用标签==
+      "#==通用标签==",
       "Big Tits", "Big Boobs", "Huge Tits", "MILF",
       "Mature", "Cougar", "Creampie", "Anal",
       "Interracial", "BBC", "POV", "Threesome",
       "Gangbang", "Lesbian", "Squirt", "Deepthroat",
       "Blowjob", "Cumshot", "Facial", "Roleplay",
       "Step Sis", "Step Mom", "Taboo", "Cuckold", "Hotwife",
-      #==经典制片厂==
+      "#==经典制片厂==",
       "Elegant Angel", "Wicked", "Hustler", "Vivid",
       "Abbywinters.com", "Active Duty", "Adam & Eve",
       "Anabolic Video", "Anarchy Films", "Antigua Pictures",
@@ -418,7 +418,7 @@
       "Yo Linear Productions", "Young and Anal", "Your Choice",
       "Yum Yum Entertainment", "Zaye Entertainment", "Zbfvideo Budapest",
       "Zero Tolerance", "ZFX", "Zorro", "Zuko Productions",
-      #==知名演员==
+      "#==知名演员==",
       "Maitland Ward", "Carter Cruise", "Jessa Rhodes",
       "Adriana Chechik", "Ana Foxxx", "Karla Kush",
       "Mia Khalifa", "Abella Danger", "Angela White",
@@ -432,7 +432,7 @@
       "Alex Adams", "Violet Myers", "Bonnie Blue",
       "Lily Phillips", "Emma Rose", "Eva Maxim",
       "Ariel Demure", "Riley Reid",
-      #==常见词汇==
+      "#==常见词汇==",
       "pussy", "cunt", "vagina", "twat", "cock",
       "dick", "penis", "boner", "tits", "boobs",
       "breasts", "knockers", "ass", "butt", "rectum",
@@ -445,59 +445,59 @@
       "trans threesome"
     ],
     "chinese": [
-      #==传媒品牌==
+      "#==传媒品牌==",
       "MDTV", "JD传媒", "MDCN", "JK", "JK-",
       "HT", "HT-", "MDX", "MDX-",
-      #==角色类型==
+      "#==角色类型==",
       "外围", "模特", "网援", "兼职",
-      #==制作方==
+      "#==制作方==",
       "人间艺术家", "大闸蟹", "海哥", "老王", "眼镜哥",
-      #==通用标签==
+      "#==通用标签==",
       "影视", "视频", "大尺寸", "做爱", "性交",
       "交配", "欢好", "穴", "肉洞", "阴茎", "肉棒",
       "操逼", "日批", "打炮", "爱爱", "性爱", "交欢",
       "云雨", "翻云覆雨",
-      #==身体部位==
+      "#==身体部位==",
       "乳房", "胸部", "咪咪", "奶子", "酥胸", "乳头",
       "阴蒂", "阴道", "子宫",
-      #==性行为==
+      "#==性行为==",
       "口活", "吹箫", "手淫", "指交", "自慰", "飞机",
       "后入", "狗仔式", "老汉推车",
-      #==体型特征==
+      "#==体型特征==",
       "小胸", "贫乳", "飞机场", "太平公主", "肥臀",
       "大屁股", "蜜桃臀", "肉丝", "半裸", "三点", "两点",
       "白虎", "光滑",
-      #==角色职业==
+      "#==角色职业==",
       "OL", "白领", "秘书", "写真", "御姐", "萝莉",
       "女仆", "浴室", "厕所", "厨房", "客厅", "卧室",
-      #==服务场景==
+      "#==服务场景==",
       "按摩", "精油", "推油", "SPA", "水疗", "跳蛋",
       "震动棒", "情趣", "玩具", "道具", "大保健", "快餐",
       "包夜", "半套", "全套", "莞式", "一条龙", "冰火",
       "69式", "丝推", "毒龙", "漫游",
-      #==视频特征==
+      "#==视频特征==",
       "马赛克", "打码", "中出", "颜射", "口爆", "吞精",
       "潮喷", "喷水", "失禁", "放尿", "群交", "乱交",
       "多人", "SM", "调教", "捆绑", "虐待", "鞭打",
-      #==交易相关==
+      "#==交易相关==",
       "援交", "买春", "卖淫", "嫖娼", "泄欲", "纵欲",
-      #==其他标签==
+      "#==其他标签==",
       "淫乱", "淫荡", "骚货", "浪叫", "呻吟", "叫床",
       "高潮", "偷拍", "盗摄", "针孔", "摄像头",
-      #==地区==
+      "#==地区==",
       "大陆", "港台", "香港", "澳门", "内地", "海外", "华裔",
-      #==视频质量==
+      "#==视频质量==",
       "超清", "无水印", "热门", "最新", "首发",
-      #==制作方英文==
+      "#==制作方英文==",
       "SuChang", "AiLi", "Madou", "Shen Xiansheng",
       "Tanhua", "Li Xunhua", "Xiaobao", "Dazhaxie",
       "Hai Ge", "Lao Wang", "Yanjing Ge", "Waiwei",
       "Wangyuan", "Jianzhi", "Yuanjiao", "Wanghong",
       "Zhubo", "Mote", "Xiezhen", "Zhibo", "Wangpai",
-      #==番号前缀==
+      "#==番号前缀==",
       "MD", "MD-", "MX", "MX-", "PMC", "PMC-",
       "TM", "TM-", "TW", "TW-", "AV", "AV-",
-      #==活动类型==
+      "#==活动类型==",
       "约炮", "网红", "探花", "小宝寻花", "传媒", "傳媒",
       "麻豆", "麻豆傳媒", "MADOU", "精东", "精東傳媒",
       "天美", "天美傳媒", "蜜桃", "蜜桃傳媒", "91制片",
@@ -505,10 +505,10 @@
       "皇家华人", "皇家華人", "RAS", "RAS-", "星空传媒",
       "星空傳媒", "XK", "XK-", "葫芦娃", "葫蘆娃",
       "SWAG", "SWAG-", "OnlyFans", "OnlyFans-",
-      #==内容来源==
+      "#==内容来源==",
       "国产", "國產", "自拍", "自製", "偷拍", "偷攝",
       "直播", "主播",
-      #==角色称呼==
+      "#==角色称呼==",
       "小姐", "外围", "外圍", "上门", "上門", "酒店",
       "宾馆", "賓館", "约会", "約會", "炮友", "砲友",
       "情侣", "情侶", "夫妻", "夫婦", "人妻", "熟女",
@@ -516,12 +516,12 @@
       "模特", "空姐", "护士", "白领", "高跟", "丝袜",
       "黑丝", "外围女", "车模", "网拍", "福利姬", "福利视频",
       "直播间", "大神",
-      #==活动场景==
+      "#==活动场景==",
       "约炮上门", "酒店开房", "真实约", "绿帽", "出轨",
       "NTR", "校园", "宿舍", "办公室",
-      #==关系类型==
+      "#==关系类型==",
       "女友", "闺蜜",
-      #==网红/演员==
+      "#==网红/演员==",
       "苏畅", "Su Chang", "艾鲤", "Ai Li", "吴梦梦",
       "Wu Mengmeng", "夏晴子", "Xia Qingzi", "玩偶姐姐",
       "Doll Sister", "林思妤", "Lin Siyu", "王瑞儿",
@@ -580,7 +580,7 @@
       "林怡梦", "袁子仪", "苏艾文", "苏娅", "乔安",
       "黄雅曼", "纪妍希", "静静", "李文静", "林亦涵",
       "蜜苏", "童汐", "沙美辰",
-      #==露骨词汇==
+      "#==露骨词汇==",
       "屄", "小屄", "嫩屄", "粉屄", "淫屄", "骚屄",
       "屌", "大屌", "鸡巴", "大鸡巴", "巨屌", "老二",
       "鸡鸡", "干", "干屄", "插", "插屄", "肏",
@@ -594,90 +594,90 @@
       "小米姬"
     ],
     "other": [
-      #==分辨率==
+      "#==分辨率==",
       "HDRip", "QHD", "1080P", "720P", "480P",
       "360P", "240P",
-      #==帧率==
+      "#==帧率==",
       "60FPS", "120FPS", "240FPS", "30FPS", "24FPS",
       "59.94FPS", "29.97FPS",
-      #==视频格式==
+      "#==视频格式==",
       "RMVB", "RM", "FLV", "MKA",
-      #==音频编码==
+      "#==音频编码==",
       "EAC3", "DDP", "DD",
-      #==来源类型==
+      "#==来源类型==",
       "SATRIP", "TVRIP", "CAM", "TS", "TC",
       "TELESYNC", "TELECINE",
-      #==文件格式==
+      "#==文件格式==",
       "M4V", "M2TS", "ISO", "IMG", "DVD5", "DVD9",
-      #==制式==
+      "#==制式==",
       "NTSC", "PAL", "SECAM", "SECA",
-      #==分片标记==
+      "#==分片标记==",
       "CD1", "CD2", "CD3", "DISC1", "DISC2", "DISC3",
       "PART1", "PART2", "PART3", "PT1", "PT2", "PT3",
-      #==语言标记==
+      "#==语言标记==",
       "DUAL", "MULTI", "MULTISUBS", "ENGLISH", "JAPANESE",
       "CHINESE", "EN", "JP", "CN", "ZH", "ENG",
       "JPN", "CHN", "ZHO",
-      #==版本标记==
+      "#==版本标记==",
       "DIRECTORS-CUT", "EXTENDED", "UNCUT", "UNCENSORED",
       "UNRATED", "REMASTERED", "REPACK", "PROPER",
       "LIMITED", "INTERNAL", "NUKED",
-      #==编码参数==
+      "#==编码参数==",
       "10BIT", "8BIT", "HI10P", "HI8P", "HYBRID",
       "COMPRESS", "RE-ENCODE",
-      #==其他标记==
+      "#==其他标记==",
       "SAMPLE", "PROOF", "NFO", "SFV", "SUBS",
       "SUBPACK", "SUBBED", "DUBBED", "DUAL-AUDIO",
       "COMPLETE", "FULL", "COMPLETE-SEASON", "SEASON",
       "S01", "S02", "S03", "EPISODE", "E01", "E02", "E03",
-      #==显示技术==
+      "#==显示技术==",
       "OLED", "LED", "LCD", "PLASMA", "HDRIP", "SDR",
       "BT2020", "BT709",
-      #==压缩/质量==
+      "#==压缩/质量==",
       "COMPRESSED", "ENCODED", "RE-ENC", "CRRIP",
       "DVDR", "R5", "HQ", "LQ", "PDTV", "DSR",
       "HDTVRIP", "4K60", "1080P60", "720P60",
       "4K60FPS", "1080P60FPS", "720P60FPS",
-      #==修正状态==
+      "#==修正状态==",
       "无修正", "有修正", "无修正版", "完全版",
       "Censored", "Uncut",
-      #==露骨词汇==
+      "#==露骨词汇==",
       "fuck", "sex", "BJ", "gangbang", "threesome",
       "三人行", "四人行", "群P", "乱P",
-      #==身体特征==
+      "#==身体特征==",
       "大奶", "小奶", "大腚", "白丝", "黑森林",
-      #==角色称呼==
+      "#==角色称呼==",
       "女王", "女神", "女优", "AV女优", "骚妇",
       "淫妇", "荡女", "骚母狗", "母狗", "下流",
       "放荡", "骚浪", "风骚", "娇喘", "喘息",
       "绝顶", "泄身", "羞耻play", "腿交", "腋",
       "腋交", "恋足", "足控", "腿控", "胸控", "臀控",
-      #==场景==
+      "#==场景==",
       "户外", "野外", "公园", "车", "车内",
-      #==道具==
+      "#==道具==",
       "dildo", "vibrator", "toy", "toys",
-      #==字幕/语言==
+      "#==字幕/语言==",
       "双语", "多语", "中字", "日字", "英字",
-      #==服务项目==
+      "#==服务项目==",
       "毒龙", "漫游", "冰火", "一条龙",
-      #==画质==
+      "#==画质==",
       "高清", "超清", "蓝光",
-      #==编码类型==
+      "#==编码类型==",
       "无码", "有码", "薄码", "破解", "无修", "有修",
       "修复版",
-      #==字幕==
+      "#==字幕==",
       "中文字幕", "中日字幕", "中英字幕", "字幕",
       "内嵌字幕", "外挂字幕",
-      #==音轨==
+      "#==音轨==",
       "原声", "原版音轨", "日语原声", "国语", "粤语",
       "台配",
-      #==版本==
+      "#==版本==",
       "完整版", "无删减版", "导演剪辑版",
       "流出", "泄露", "流版本", "典藏版", "珍藏版",
       "合集", "独家", "首发", "最新",
-      #==成人标识==
+      "#==成人标识==",
       "成人", "成人视频", "成人电影",
-      #==韩国内容==
+      "#==韩国内容==",
       "韩国", "韓國", "韓流", "KCUP", "韓國成人",
       "韓AV", "한국", "한국야동", "한국AV",
       "한국포르노", "한국섹스", "한국BJ", "BJ",
@@ -687,7 +687,7 @@
       "음란", "변태", "SM", "조교", "노출",
       "야외", "NTR", "불륜", "밀프", "熟女",
       "巨乳", "爆乳",
-      #==露骨词汇==
+      "#==露骨词汇==",
       "骚逼", "屄", "小屄", "嫩屄", "粉屄", "淫屄",
       "骚屄", "屌", "大屌", "鸡巴", "大鸡巴", "巨屌",
       "肉棒", "老二", "鸡鸡", "操", "操逼", "干",
@@ -700,11 +700,11 @@
       "轮奸", "强制", "强奸", "痴汉", "痴女", "淫乱",
       "骚货", "浪货", "浪叫", "淫叫", "呻吟", "变态",
       "マゾ", "奴隷", "孕ませ", "種付け",
-      #==其他==
+      "#==其他==",
       "podcast", "gaming", "music", "ASMR", "4K", "UHD"
     ],
     "exclude": [
-      #==保护关键词==
+      "#==保护关键词==",
       "child", "minor", "underage", "kid", "teen",
       "youth", "infant", "pedophile", "pedophilia",
       "csam", "ncm", "illegal", "prohibited", "trafficking",
