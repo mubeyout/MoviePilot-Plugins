@@ -23,18 +23,85 @@ class MetatubeApiClient:
 
     # 番号正则表达式列表
     NUMBER_PATTERNS = [
-        # 标准格式: ABC-123, ABC123
+        # ===== 主流标准格式 =====
+        # 标准格式: ABC-123, ABC123, ABC-0123
         r'([A-Z]{2,10})[-_]?(\d{2,5})',
-        # FC2格式: FC2-PPV-1234567, FC2-1234567
+
+        # ===== FC2 系列 =====
+        # FC2格式: FC2-PPV-1234567, FC2-1234567, FC21234567
         r'(FC2)[-_]?(PPV)?[-_]?(\d{5,7})',
-        # 特殊格式: n1234, k1234
-        r'([nk])(\d{4})',
+
+        # ===== 素人/单体系列 =====
         # HEYZO格式: HEYZO-1234
         r'(HEYZO)[-_]?(\d{4})',
-        # Carib格式: 123456-123
+        # Tokyo Hot: n1234, k1234, k12345, K1234, KD1234
+        r'([nNK]|K|KD)[-_]?(\d{4,5})',
+        # 10musume: 10musume-1234, 10mu-123
+        r'(10MUSUME|10MU)[-_]?(\d{2,4})',
+        # PacoPaco: paco-123, pacopaco-1234
+        r'(PACO|PACOPACO)[-_]?(\d{3,5})',
+        # XXX-AV: xxx-av-12345, xxxav-12345
+        r'(XXX[-_]?AV|AV)[-_]?(\d{5})',
+
+        # ===== 网站系列 =====
+        # Caribbean系列: carib-123456-123, caribpr-123456-123
+        r'(CARIB|CARIBPR|CARIBBEANCOM)[-_]?(\d{6})[-_]?(\d{3})',
+        # 1Pondo: 1pondo-123456_123, 1p-123456_123
+        r'(\d{6})[_-](\d{3})',
+        # Sky High: s2m-123, sky-123, sky-252
+        r'(S2M|SKY|SKYHIGH)[-_]?(\d{3,4})',
+        # Red Hot: red-123
+        r'(RED|REDHOT)[-_]?(\d{3})',
+
+        # ===== 数字编号系列 =====
+        # H系列: H0930-123, H4610-123
+        r'(H\d{4})[-_]?(\d{3})',
+        # C系列: C0930-123
+        r'(C\d{4})[-_]?(\d{3})',
+        # 纯数字系列: 123456-123, 123456_123
         r'(\d{6})[-_](\d{3})',
-        # 1Pondo格式: 123456_123
-        r'(\d{6})[_](\d{3})',
+
+        # ===== 特殊厂商 =====
+        # Kin8tengoku: kin8-123, eng-123
+        r'(KIN8|TENGOKU|ENG)[-_]?(\d{3,5})',
+        # Gold系列: gold-123
+        r'(GOLD)[-_]?(\d{3,4})',
+        # CWP: cwp-123
+        r'(CWP)[-_]?(\d{3,5})',
+        # Prestige系列: abp-123, abw-123
+        r'(ABP|ABW|BKSP)[-_]?(\d{3,4})',
+        # S1系列: ssis-123, stars-123
+        r'(SSIS|STARS|SSND|SNIS)[-_]?(\d{3,4})',
+        # IdeaPocket: ipx-123, ipzz-123
+        r'(IPX|IPZ|IPZZ)[-_]?(\d{3,4})',
+        # Moodyz: mide-123, midv-123, mipx-123
+        r'(MIDE|MIDV|MIPX|MIAE|MIRD)[-_]?(\d{3,4})',
+        # E-BODY: ebod-123
+        r'(EBOD|EBODY)[-_]?(\d{3,4})',
+        # WanZ: wanz-123
+        r'(WANZ|WAAA)[-_]?(\d{3,4})',
+
+        # ===== VR系列 =====
+        # VR: vr-123, 3dvr-123
+        r'(VR|3DVR|VRVR)[-_]?(\d{3,5})',
+
+        # ===== 欧美系列 =====
+        # RealityKings: rk-12345
+        r'(RK)[-_]?(\d{4,5})',
+        # XEmpire: xempire-12345
+        r'(XEMPIRE|DARKX|EROTICAX|HARDX|LESBIANX)[-_]?(\d{3,5})',
+        # 21Sextury: 21naturals-12345, 21footart-12345
+        r'(21SEXTURY|21NATURALS|21FOOTART|21EROTICA)[-_]?(\d{3,5})',
+
+        # ===== 中文系列 =====
+        # MDTV/MDX: mdtv-1234, mdx-1234
+        r'(MDTV|MDX|MD|JD)[-_]?(\d{3,4})',
+
+        # ===== 复合格式(后置匹配) =====
+        # 包含字母数字组合的三段式: ABC-123-DEF, ABC123-DEF
+        r'([A-Z]{2,6})[-_]?(\d{3,5})[-_]?([A-Z]{0,4})',
+        # 特殊数字格式: 062123-123
+        r'(\d{5,6})[-_](\d{3})',
     ]
 
     def __init__(self, base_url: str = "http://127.0.0.1:8080",
@@ -83,13 +150,25 @@ class MetatubeApiClient:
             if match:
                 groups = match.groups()
                 if len(groups) == 2:
+                    # 标准两段式: ABC-123
                     return f"{groups[0]}-{groups[1]}".upper()
                 elif len(groups) == 3:
-                    # FC2格式
-                    if groups[1]:
+                    # 三段式格式判断
+                    if groups[0] == 'FC2':
+                        # FC2格式: FC2-PPV-1234567 (中间可选)
+                        if groups[1]:  # PPV存在
+                            return f"{groups[0]}-{groups[1]}-{groups[2]}".upper()
+                        else:  # PPV不存在
+                            return f"{groups[0]}-{groups[2]}".upper()
+                    elif groups[0] in ['CARIB', 'CARIBPR', 'CARIBBEANCOM']:
+                        # Caribbean格式: CARIB-123456-123
                         return f"{groups[0]}-{groups[1]}-{groups[2]}".upper()
-                    else:
+                    elif groups[1] is None or groups[1] == '':
+                        # 中间组为空，实际是两段式
                         return f"{groups[0]}-{groups[2]}".upper()
+                    else:
+                        # 通用三段式: ABC-123-DEF
+                        return f"{groups[0]}-{groups[1]}-{groups[2]}".upper()
 
         return None
 
