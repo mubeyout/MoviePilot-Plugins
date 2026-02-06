@@ -5,7 +5,7 @@ from typing import AsyncGenerator, Set
 
 import aiofiles.os as aio_os
 from app.log import logger
-from app.plugins.alist2strm.bloom import CoutingBloomFilter
+from .bloom import CoutingBloomFilter
 
 
 class Cleaner(ABC):
