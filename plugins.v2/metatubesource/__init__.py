@@ -175,19 +175,12 @@ class MetatubeSource(_PluginBase):
         "FHD", "HD", "SD", "LD", "ED",
 
         # === 分辨率 ===
-        "2160P", "1440P", "1080P", "720P", "480P", "360P", "240P",
         "3840X2160", "1920X1080", "1280X720",
         "X264", "X265", "H264", "H265",
 
         # === 帧率 ===
         "60FPS", "120FPS", "240FPS", "30FPS", "24FPS",
         "60FPS", "59.94FPS", "29.97FPS",
-
-        # === 视频编码 ===
-        "H.265", "H.264", "HEVC", "XVID", "DIVX",
-        "X264", "X265", "VC-1", "VP9", "VP8", "AV1", "AVC",
-        "MPEG-2", "MPEG-4", "MPEG4", "MPEG2",
-        "WMV", "RMVB", "RM", "FLV",
 
         # === 音频编码 ===
         "AC3", "DTS", "DTS-HD", "DTS-HDMA", "AAC", "FLAC",
@@ -202,18 +195,9 @@ class MetatubeSource(_PluginBase):
         "SATRIP", "TVRIP", "CAM", "TS", "TC",
         "TELESYNC", "TELECINE",
 
-        # === 文件格式 ===
-        "MKV", "MP4", "AVI", "WMV", "FLV",
-        "MOV", "M4V", "TS", "M2TS",
-        "ISO", "IMG", "DVD5", "DVD9",
-
         # === 制式 ===
         "NTSC", "PAL", "SECAM", "SECA",
 
-        # === 分片标记 ===
-        "CD1", "CD2", "CD3", "DISC1", "DISC2", "DISC3",
-        "PART1", "PART2", "PART3",
-        "PT1", "PT2", "PT3",
 
         # === 来源标记 ===
         "NETFLIX", "DISNEY+", "HULU", "AMZN",
@@ -221,10 +205,6 @@ class MetatubeSource(_PluginBase):
         "APPLE-TV", "APPLE+",
         "PRIME", "AMAZON",
         "CRUNCHYROLL", "FUNIMATION",
-
-        # === 发布组 ===
-        "RARBG", "YTS", "YIFY", "FGT",
-        "RARBG", "1337X", "NYAA", "SUKEBEI",
 
         # === 语言标记 ===
         "DUAL", "MULTI", "MULTISUBS",
@@ -620,30 +600,6 @@ class MetatubeSource(_PluginBase):
                                 ]
                             }
                         ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "clear_logs_flag",
-                                            "label": "清空识别记录",
-                                            "hint": "保存后清空所有识别日志记录"
-                                        }
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": []
-                            }
-                        ]
                     },
                     {
                         "component": "VRow",
@@ -1072,7 +1028,14 @@ class MetatubeSource(_PluginBase):
         rows = []
         if self._log_entries:
             for log in reversed(list(self._log_entries)):
-                status_color = "success" if log.status == "success" else "error"
+                # 状态颜色：success=绿色, fallback=橙色, failed=红色
+                if log.status == "success":
+                    status_color = "success"
+                elif log.status == "fallback":
+                    status_color = "warning"
+                else:
+                    status_color = "error"
+
                 # 分类颜色
                 category_color = "primary"
                 if "日系" in log.category:
@@ -1383,6 +1346,45 @@ class MetatubeSource(_PluginBase):
             message=message
         )
         self._log_entries.append(log_entry)
+
+    def _handle_recognition_failure(self, number: str, title: str, failure_reason: str = "识别失败") -> Optional[MediaInfo]:
+        """
+        统一的识别失败处理方法
+
+        :param number: 番号
+        :param title: 原始标题（用于分类检测）
+        :param failure_reason: 失败原因
+        :return: 处理后的 MediaInfo 或 None
+        """
+        # 未启用失败自动下载，直接返回 None
+        if not self._failed_download_control:
+            self._add_log(number, "", "failed", f"{failure_reason}，未启用失败自动下载", category="")
+            return None
+
+        # 使用原始标题进行分类检测（修复：原异常流程错误使用 number）
+        subcategory = self._detect_category_type(title)
+        category = self._build_category(subcategory)
+
+        # 构建日志消息
+        if subcategory == self.SUBCATEGORY_OTHER:
+            log_msg = f"{failure_reason}，未匹配关键字，归类为成人/其他"
+        else:
+            log_msg = f"{failure_reason}，匹配{subcategory}关键字，归类为成人/{subcategory}"
+
+        # 使用 "fallback" 状态表示识别失败但归类成功（修复：原代码先记录 failed 又记录 success）
+        self._add_log(number, f"{category} ({number})", "fallback", log_msg, category=category)
+        logger.info(f"Metatube: {log_msg} (番号: {number})")
+
+        # 创建基础 MediaInfo
+        mediainfo = MediaInfo()
+        mediainfo.source = 'metatube'
+        mediainfo.type = MediaType.MOVIE
+        mediainfo.title = number
+        mediainfo.original_title = number
+        mediainfo.imdb_id = number
+        mediainfo.set_category(category)
+
+        return mediainfo
 
     def _get_all_keywords(self) -> List[str]:
         """获取所有关键字（优先级: 自定义 > 内置核心 > keywords.json文件）"""
@@ -2099,7 +2101,8 @@ class MetatubeSource(_PluginBase):
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
-            return None
+            # 使用原始标题作为番号兜底，走失败处理流程
+            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
 
         logger.info(f"Metatube: 正在识别番号 {number} (分类: {detected_category}) ...")
 
@@ -2133,37 +2136,8 @@ class MetatubeSource(_PluginBase):
             # 搜索
             results = self._metatube_client.search(number, fallback=True)
             if not results:
-                # 识别失败处理
-                failure_msg = "未找到匹配结果" if self._show_failure_detail else "识别失败"
-                self._add_log(number, "", "failed", failure_msg, category="")
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-
-
-                # 识别失败，根据关键字匹配结果归类
-                if self._failed_download_control:
-                    # 先进行关键字匹配检测
-                    subcategory = self._detect_category_type(title)
-                    category = self._build_category(subcategory)
-
-                    if subcategory == self.SUBCATEGORY_OTHER:
-                        # 未匹配到任何关键字，归类为"其他"
-                        logger.info(f"Metatube: 识别失败，未匹配关键字，归类为'{category}'分类")
-                        self._add_log(number, f"{category} ({number})", "success", "识别失败，未匹配关键字，归类为成人/其他", category=category)
-                    else:
-                        # 匹配到关键字，归类到对应分类
-                        logger.info(f"Metatube: 识别失败，匹配到{subcategory}关键字，归类为'{category}'分类")
-                        self._add_log(number, f"{category} ({number})", "success", f"识别失败，匹配{subcategory}关键字，归类为成人/{subcategory}", category=category)
-
-                    mediainfo = MediaInfo()
-                    mediainfo.source = 'metatube'
-                    mediainfo.type = MediaType.MOVIE
-                    mediainfo.title = number
-                    mediainfo.original_title = number
-                    mediainfo.imdb_id = number
-                    mediainfo.set_category(category)
-                    return mediainfo
-
-                return None
+                return self._handle_recognition_failure(number, title, "未找到匹配结果")
 
             # 取第一个结果
             movie = results[0]
@@ -2190,34 +2164,9 @@ class MetatubeSource(_PluginBase):
         except Exception as e:
             # 异常处理
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            self._add_log(number, "", "failed", failure_msg, category="")
             logger.error(f"Metatube: 识别异常 - {str(e)}")
-
-            # 识别异常处理：根据关键字匹配结果归类
-            if self._failed_download_control:
-                # 先进行关键字匹配检测
-                subcategory = self._detect_category_type(number)
-                category = self._build_category(subcategory)
-
-                if subcategory == self.SUBCATEGORY_OTHER:
-                    # 未匹配到任何关键字，归类为"其他"
-                    logger.info(f"Metatube: 识别异常，未匹配关键字，归类为'{category}'分类")
-                    self._add_log(number, f"{category} ({number})", "success", "识别异常但未匹配关键字，归类为其他", category=category)
-                else:
-                    # 匹配到关键字，归类到对应分类
-                    logger.info(f"Metatube: 识别异常，匹配到{subcategory}关键字，归类为'{category}'分类")
-                    self._add_log(number, f"{category} ({number})", "success", f"识别异常但匹配{subcategory}关键字，归类为{subcategory}", category=category)
-
-                mediainfo = MediaInfo()
-                mediainfo.source = 'metatube'
-                mediainfo.type = MediaType.MOVIE
-                mediainfo.title = number
-                mediainfo.original_title = number
-                mediainfo.imdb_id = number
-                mediainfo.set_category(category)
-                return mediainfo
-
-            return None
+            # 修复：使用 title 而不是 number 进行分类检测
+            return self._handle_recognition_failure(number, title, failure_msg)
 
     async def async_recognize_media(self, meta: MetaBase = None,
                                     mtype: MediaType = None,
@@ -2246,7 +2195,8 @@ class MetatubeSource(_PluginBase):
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
-            return None
+            # 使用原始标题作为番号兜底，走失败处理流程
+            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
 
         logger.info(f"Metatube: 正在异步识别番号 {number} ...")
 
@@ -2279,37 +2229,8 @@ class MetatubeSource(_PluginBase):
             # 异步搜索
             results = await self._metatube_client.async_search(number, fallback=True)
             if not results:
-                # 识别失败处理
-                failure_msg = "未找到匹配结果" if self._show_failure_detail else "识别失败"
-                self._add_log(number, "", "failed", failure_msg, category="")
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-
-
-                # 识别失败，根据关键字匹配结果归类
-                if self._failed_download_control:
-                    # 先进行关键字匹配检测
-                    subcategory = self._detect_category_type(number)
-                    category = self._build_category(subcategory)
-
-                    if subcategory == self.SUBCATEGORY_OTHER:
-                        # 未匹配到任何关键字，归类为"其他"
-                        logger.info(f"Metatube: 异步识别失败，未匹配关键字，归类为'{category}'分类")
-                        self._add_log(number, f"{category} ({number})", "success", "异步识别失败但未匹配关键字，归类为其他", category=category)
-                    else:
-                        # 匹配到关键字，归类到对应分类
-                        logger.info(f"Metatube: 异步识别失败，匹配到{subcategory}关键字，归类为'{category}'分类")
-                        self._add_log(number, f"{category} ({number})", "success", f"异步识别失败但匹配{subcategory}关键字，归类为{subcategory}", category=category)
-
-                    mediainfo = MediaInfo()
-                    mediainfo.source = 'metatube'
-                    mediainfo.type = MediaType.MOVIE
-                    mediainfo.title = number
-                    mediainfo.original_title = number
-                    mediainfo.imdb_id = number
-                    mediainfo.set_category(category)
-                    return mediainfo
-
-                return None
+                return self._handle_recognition_failure(number, title, "未找到匹配结果")
 
             # 取第一个结果
             movie = results[0]
@@ -2336,31 +2257,6 @@ class MetatubeSource(_PluginBase):
         except Exception as e:
             # 异常处理
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            self._add_log(number, "", "failed", failure_msg, category="")
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
-
-            # 异步识别异常处理：根据关键字匹配结果归类
-            if self._failed_download_control:
-                # 先进行关键字匹配检测
-                subcategory = self._detect_category_type(number)
-                category = self._build_category(subcategory)
-
-                if subcategory == self.SUBCATEGORY_OTHER:
-                    # 未匹配到任何关键字，归类为"其他"
-                    logger.info(f"Metatube: 异步识别异常，未匹配关键字，归类为'{category}'分类")
-                    self._add_log(number, f"{category} ({number})", "success", "异步识别异常但未匹配关键字，归类为其他", category=category)
-                else:
-                    # 匹配到关键字，归类到对应分类
-                    logger.info(f"Metatube: 异步识别异常，匹配到{subcategory}关键字，归类为'{category}'分类")
-                    self._add_log(number, f"{category} ({number})", "success", f"异步识别异常但匹配{subcategory}关键字，归类为{subcategory}", category=category)
-
-                mediainfo = MediaInfo()
-                mediainfo.source = 'metatube'
-                mediainfo.type = MediaType.MOVIE
-                mediainfo.title = number
-                mediainfo.original_title = number
-                mediainfo.imdb_id = number
-                mediainfo.set_category(category)
-                return mediainfo
-
-            return None
+            # 修复：使用 title 而不是 number 进行分类检测
+            return self._handle_recognition_failure(number, title, failure_msg)
