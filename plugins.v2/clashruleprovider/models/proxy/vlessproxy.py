@@ -1,4 +1,4 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional, Literal
 
 from .proxybase import ProxyBase
@@ -14,3 +14,11 @@ class VlessProxy(ProxyBase, TLSMixin, NetworkMixin):
     xudp: Optional[bool] = None
     packet_encoding: Optional[Literal['packetaddr', 'xudp']] = Field(None, alias='packet-encoding')
     encryption: Optional[str] = None
+
+    @field_validator('packet_encoding', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """Convert empty string to None for packet_encoding"""
+        if v == '':
+            return None
+        return v

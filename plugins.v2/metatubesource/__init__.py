@@ -16,9 +16,12 @@ from app.schemas.types import MediaType
 
 from .metatube_api import MetatubeApiClient
 from .theporndb_api import ThePornDBApiClient
+from .bytemuse_api import ByteMuseApiClient
 from .schema import (
     MetatubeMovie, MetatubeMovieDetail, LogEntry,
-    ThePornDBScene, ThePornDBSceneDetail
+    ThePornDBScene, ThePornDBSceneDetail,
+    ThePornDBJAVDetail, ThePornDBJAVScene,
+    ByteMuseMovie, ByteMuseSearchResponse
 )
 
 
@@ -303,9 +306,17 @@ class MetatubeSource(_PluginBase):
     _theporndb_enabled: bool = False  # 是否启用 ThePornDB
     _theporndb_api_token: str = ""  # ThePornDB API Token
 
+    # ByteMuse 配置
+    _bytemuse_enabled: bool = False  # 是否启用 ByteMuse
+    _bytemuse_url: str = "http://127.0.0.1:3750"  # ByteMuse API 地址
+
+    # JAV 配置
+    _jav_number_auto_match: bool = True  # JAV番号自动匹配
+
     # 私有属性
     _metatube_client: MetatubeApiClient = None
     _theporndb_client: ThePornDBApiClient = None  # ThePornDB 客户端
+    _bytemuse_client: ByteMuseApiClient = None  # ByteMuse 客户端
     _original_method: Optional[Callable] = None
     _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
     _log_entries: deque = None
@@ -438,6 +449,11 @@ class MetatubeSource(_PluginBase):
             # ThePornDB 配置
             self._theporndb_enabled = bool(config.get("theporndb_enabled") or False)
             self._theporndb_api_token = config.get("theporndb_api_token") or ""
+            # ByteMuse 配置
+            self._bytemuse_enabled = bool(config.get("bytemuse_enabled") or False)
+            self._bytemuse_url = config.get("bytemuse_url") or "http://127.0.0.1:3750"
+            # JAV 配置
+            self._jav_number_auto_match = bool(config.get("jav_number_auto_match") or True)
             # 新增配置项
             self._exclude_keywords = config.get("exclude_keywords") or ""
             self._keywords_file_path = "keywords.json"  # 固定路径，不再提供配置
@@ -465,6 +481,12 @@ class MetatubeSource(_PluginBase):
         # 初始化 ThePornDB 客户端
         self._theporndb_client = ThePornDBApiClient(
             api_token=self._theporndb_api_token,
+            timeout=self._timeout
+        )
+
+        # 初始化 ByteMuse 客户端
+        self._bytemuse_client = ByteMuseApiClient(
+            base_url=self._bytemuse_url,
             timeout=self._timeout
         )
 
@@ -625,9 +647,9 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "VSwitch",
                                         "props": {
-                                            "model": "clear_logs_flag",
-                                            "label": "清空识别记录",
-                                            "hint": "保存后清空所有识别日志记录"
+                                            "model": "bytemuse_enabled",
+                                            "label": "启用ByteMuse",
+                                            "hint": "启用ByteMuse作为主要识别源"
                                         }
                                     }
                                 ]
@@ -637,14 +659,25 @@ class MetatubeSource(_PluginBase):
                                 "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
-                                        "component": "VTextField",
+                                        "component": "VSwitch",
                                         "props": {
-                                            "model": "timeout",
-                                            "label": "超时时间",
-                                            "type": "number",
-                                            "placeholder": "30",
-                                            "suffix": "秒",
-                                            "hint": "API请求超时（1-60秒）"
+                                            "model": "jav_number_auto_match",
+                                            "label": "JAV番号自动匹配",
+                                            "hint": "自动检测JAV番号格式"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "clear_logs_flag",
+                                            "label": "清空识别记录",
+                                            "hint": "保存后清空所有识别日志记录"
                                         }
                                     }
                                 ]
@@ -664,7 +697,7 @@ class MetatubeSource(_PluginBase):
                                             "model": "api_url",
                                             "label": "Metatube API地址",
                                             "placeholder": "http://127.0.0.1:8080",
-                                            "hint": "Metatube服务地址，如：http://127.0.0.1:3244"
+                                            "hint": "Metatube服务地址"
                                         }
                                     }
                                 ]
@@ -678,8 +711,45 @@ class MetatubeSource(_PluginBase):
                                         "props": {
                                             "model": "theporndb_api_token",
                                             "label": "ThePornDB API Token",
-                                            "placeholder": "从 https://theporndb.net 获取API Token",
-                                            "hint": "登录 ThePornDB 后在设置页面获取 Metadata API Token"
+                                            "placeholder": "从 https://theporndb.net 获取",
+                                            "hint": "登录后在设置页面获取 Metadata API Token"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "bytemuse_url",
+                                            "label": "ByteMuse API地址",
+                                            "placeholder": "http://127.0.0.1:3750",
+                                            "hint": "ByteMuse服务地址"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "timeout",
+                                            "label": "超时时间",
+                                            "type": "number",
+                                            "placeholder": "30",
+                                            "suffix": "秒",
+                                            "hint": "API请求超时时间（1-60秒）"
                                         }
                                     }
                                 ]
@@ -756,30 +826,6 @@ class MetatubeSource(_PluginBase):
                                             "label": "自定义模板",
                                             "placeholder": "{number} {actor} [{studio}] ({year})",
                                             "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}"
-                                        }
-                                    }
-                                ]
-                            }
-                        ]
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "timeout",
-                                            "label": "超时时间",
-                                            "type": "number",
-                                            "placeholder": "30",
-                                            "suffix": "秒",
-                                            "hint": "API请求超时时间（1-30秒）",
-                                            "min": 1,
-                                            "max": 30
                                         }
                                     }
                                 ]
@@ -968,7 +1014,10 @@ class MetatubeSource(_PluginBase):
             "custom_naming_template": "",
             "max_actors": 2,
             "theporndb_enabled": False,
-            "theporndb_api_token": ""
+            "theporndb_api_token": "",
+            "bytemuse_enabled": False,
+            "bytemuse_url": "http://127.0.0.1:3750",
+            "jav_number_auto_match": True
         }
 
     def get_page(self) -> List[dict]:
@@ -1310,7 +1359,10 @@ class MetatubeSource(_PluginBase):
             "custom_naming_template": self._custom_naming_template,
             "max_actors": self._max_actors,
             "theporndb_enabled": self._theporndb_enabled,
-            "theporndb_api_token": self._theporndb_api_token
+            "theporndb_api_token": self._theporndb_api_token,
+            "bytemuse_enabled": self._bytemuse_enabled,
+            "bytemuse_url": self._bytemuse_url,
+            "jav_number_auto_match": self._jav_number_auto_match
         })
 
     @staticmethod
@@ -1375,14 +1427,21 @@ class MetatubeSource(_PluginBase):
         self._add_log(number, f"{category} ({number})", "fallback", log_msg, category=category)
         logger.info(f"Metatube: {log_msg} (番号: {number})")
 
-        # 创建基础 MediaInfo
+        # 创建基础 MediaInfo，包含必要的字段以支持下载流程
         mediainfo = MediaInfo()
         mediainfo.source = 'metatube'
         mediainfo.type = MediaType.MOVIE
         mediainfo.title = number
-        mediainfo.original_title = number
-        mediainfo.imdb_id = number
+        mediainfo.original_title = title or number  # 保留原始标题用于模糊搜索
+        mediainfo.imdb_id = number  # 使用番号作为 IMDB ID
+        mediainfo.tmdb_id = None
+        mediainfo.tvdb_id = None
+        mediainfo.douban_id = None
+        mediainfo.bangumi_id = None
+        mediainfo.year = None
         mediainfo.set_category(category)
+
+        logger.debug(f"Metatube: 创建失败处理的 MediaInfo - title={mediainfo.title}, original_title={mediainfo.original_title}, category={category}")
 
         return mediainfo
 
@@ -1843,6 +1902,117 @@ class MetatubeSource(_PluginBase):
 
         return result
 
+    def _convert_bytemuse_to_mediainfo(self, movie: ByteMuseMovie) -> MediaInfo:
+        """将 ByteMuse 结果转换为 MediaInfo"""
+        mediainfo = MediaInfo()
+        mediainfo.source = 'bytemuse'
+        mediainfo.type = MediaType.MOVIE  # 番号内容通常作为电影处理
+
+        # 解析年份
+        year = ""
+        if movie.release_date:
+            try:
+                date_str = movie.release_date.split('T')[0]
+                year = date_str[:4]
+            except Exception:
+                pass
+
+        # 处理演员列表：优先使用 actors，其次使用 casts (逗号分隔字符串)
+        actors = []
+        if movie.actors:
+            actors = [actor.name for actor in movie.actors]
+        elif movie.casts:
+            # casts 是逗号分隔的字符串
+            actors = [name.strip() for name in movie.casts.split(',') if name.strip()]
+
+        # 处理制作商/发行商
+        studio = movie.studio or movie.publisher or ""
+        label = movie.label or movie.producer or ""
+
+        # 构建优化标题（基于模板）
+        optimized_title = self._build_optimized_title(
+            number=movie.code,
+            actors=actors,
+            studio=studio,
+            label=label,
+            year=year,
+            series=movie.series or "",
+            original_title=movie.title
+        )
+
+        # 基础信息
+        mediainfo.title = optimized_title
+        mediainfo.original_title = movie.code
+
+        # 解析发布日期获取年份
+        if movie.release_date:
+            try:
+                date_str = movie.release_date.split('T')[0]
+                mediainfo.year = date_str[:4]
+                mediainfo.release_date = date_str
+            except Exception:
+                pass
+
+        # 使用番号作为标识
+        mediainfo.imdb_id = movie.code
+
+        # 封面和海报
+        if movie.cover_url:  # cover_url 别名为 banner (横幅/封面)
+            mediainfo.poster_path = movie.cover_url
+        if movie.poster_url:  # poster_url 别名为 poster (海报)
+            mediainfo.poster_path = movie.poster_url
+        if movie.preview_url:
+            mediainfo.backdrop_path = movie.preview_url
+        if movie.thumb_url:
+            mediainfo.thumb_path = movie.thumb_url
+
+        # 评分
+        if movie.score:
+            mediainfo.vote_average = round(float(movie.score), 1)
+
+        # 演员
+        if actors:
+            mediainfo.actor = [{"name": name} for name in actors]
+
+        # 概要
+        if movie.summary:
+            mediainfo.overview = movie.summary
+
+        # 导演
+        if movie.director:
+            mediainfo.director = [{"name": movie.director}]
+
+        # 类型标签 (genres 可能是字符串，需要分割)
+        if movie.genres:
+            if isinstance(movie.genres, str):
+                genre_list = [g.strip() for g in movie.genres.split(',') if g.strip()]
+            elif isinstance(movie.genres, list):
+                genre_list = movie.genres
+            else:
+                genre_list = []
+            mediainfo.genres = [{"id": g, "name": g} for g in genre_list]
+
+        # 时长
+        if movie.runtime:
+            mediainfo.runtime = movie.runtime
+        elif movie.duration:
+            mediainfo.runtime = movie.duration // 60  # 转换为分钟
+
+        # 制作商信息
+        if studio:
+            mediainfo.studio = studio
+        if label:
+            if hasattr(mediainfo, 'label'):
+                mediainfo.label = label
+
+        # 预览图 (still_photo 是逗号分隔的URL列表)
+        if movie.still_photo:
+            image_urls = [url.strip() for url in movie.still_photo.split(',') if url.strip()]
+            if image_urls and hasattr(mediainfo, 'images'):
+                mediainfo.images = image_urls
+
+        return mediainfo
+
     def _convert_to_mediainfo(self, movie: MetatubeMovie, detail: Optional[MetatubeMovieDetail] = None) -> MediaInfo:
         """将 Metatube 结果转换为 MediaInfo"""
         mediainfo = MediaInfo()
@@ -1993,6 +2163,46 @@ class MetatubeSource(_PluginBase):
         category_type = self._detect_category_type(title)
         return category_type == "欧美系"
 
+    def _recognize_with_bytemuse(self, title: str) -> Optional[MediaInfo]:
+        """
+        使用 ByteMuse 识别媒体（主要识别源）
+
+        :param title: 搜索标题/番号
+        :return: 识别结果
+        """
+        logger.info(f"ByteMuse: 正在识别 '{title}' ...")
+
+        try:
+            # 搜索
+            results = self._bytemuse_client.search(title)
+            if not results:
+                logger.debug(f"ByteMuse: '{title}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            movie = results[0]
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_bytemuse_to_mediainfo(movie)
+
+            # 根据内容判断分类
+            category = self._detect_category_type(title)
+            if category == self.SUBCATEGORY_OTHER:
+                category = self.SUBCATEGORY_JAPANESE  # 默认为日系
+
+            full_category = self._build_category(category)
+            mediainfo.set_category(full_category)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         f"ByteMuse: {movie.provider}", category=full_category)
+            logger.info(f"ByteMuse: 识别成功 - {title} -> {mediainfo.title} (分类: {full_category})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ByteMuse: 识别异常 - {str(e)}")
+            return None
+
     def _recognize_with_theporndb(self, title: str) -> Optional[MediaInfo]:
         """
         使用 ThePornDB 识别媒体
@@ -2031,6 +2241,46 @@ class MetatubeSource(_PluginBase):
 
         except Exception as e:
             logger.error(f"ThePornDB: 识别异常 - {str(e)}")
+            return None
+
+    async def _async_recognize_with_bytemuse(self, title: str) -> Optional[MediaInfo]:
+        """
+        异步使用 ByteMuse 识别媒体（主要识别源）
+
+        :param title: 搜索标题/番号
+        :return: 识别结果
+        """
+        logger.info(f"ByteMuse: 正在异步识别 '{title}' ...")
+
+        try:
+            # 异步搜索
+            results = await self._bytemuse_client.async_search(title)
+            if not results:
+                logger.debug(f"ByteMuse: '{title}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            movie = results[0]
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_bytemuse_to_mediainfo(movie)
+
+            # 根据内容判断分类
+            category = self._detect_category_type(title)
+            if category == self.SUBCATEGORY_OTHER:
+                category = self.SUBCATEGORY_JAPANESE  # 默认为日系
+
+            full_category = self._build_category(category)
+            mediainfo.set_category(full_category)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         f"ByteMuse: {movie.provider}", category=full_category)
+            logger.info(f"ByteMuse: 异步识别成功 - {title} -> {mediainfo.title} (分类: {full_category})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ByteMuse: 异步识别异常 - {str(e)}")
             return None
 
     async def _async_recognize_with_theporndb(self, title: str) -> Optional[MediaInfo]:
@@ -2073,6 +2323,178 @@ class MetatubeSource(_PluginBase):
             logger.error(f"ThePornDB: 异步识别异常 - {str(e)}")
             return None
 
+    def _is_jav_number(self, number: str) -> bool:
+        """
+        检测是否为 JAV 番号格式
+
+        :param number: 番号
+        :return: 是否为 JAV 格式
+        """
+        if not number:
+            return False
+
+        import re
+        jav_patterns = [
+            # 标准字母+数字格式
+            r'^[A-Z]{2,6}-\d{3,5}$',
+            # FC2 格式
+            r'^FC2-PPV-\d{7}$',
+            # HEYZO 格式
+            r'^HEYZO-\d{4}$',
+            # 数字+数字格式 (如 123456-123)
+            r'^\d{6}-\d{3}$',
+            # 纯数字开头 (如 1Pondo)
+            r'^\d{6}_\d{3}$',
+        ]
+
+        upper_number = number.upper()
+        for pattern in jav_patterns:
+            if re.match(pattern, upper_number):
+                return True
+        return False
+
+    def _convert_theporndb_jav_to_mediainfo(self, jav_detail: ThePornDBJAVDetail) -> MediaInfo:
+        """将 ThePornDB JAV 结果转换为 MediaInfo"""
+        mediainfo = MediaInfo()
+        mediainfo.source = 'theporndb-jav'
+        mediainfo.type = MediaType.MOVIE
+
+        # 构建优化标题（基于模板）
+        actors = []
+        if jav_detail.performers:
+            actors = [p.name for p in jav_detail.performers]
+
+        studio = jav_detail.site.name if jav_detail.site else ""
+        year = ""
+        if jav_detail.date:
+            try:
+                year = jav_detail.date[:4]
+            except Exception:
+                pass
+
+        optimized_title = self._build_optimized_title(
+            number=jav_detail.external_id,
+            actors=actors,
+            studio=studio,
+            label="",
+            year=year,
+            series="",
+            original_title=jav_detail.title
+        )
+
+        # 基础信息
+        mediainfo.title = optimized_title
+        mediainfo.original_title = jav_detail.external_id
+
+        # 解析日期获取年份
+        if jav_detail.date:
+            try:
+                date_str = jav_detail.date.split('T')[0] if 'T' in jav_detail.date else jav_detail.date
+                mediainfo.year = date_str[:4]
+                mediainfo.release_date = date_str
+            except Exception:
+                pass
+
+        # 使用番号作为标识
+        mediainfo.imdb_id = jav_detail.external_id
+
+        # 海报
+        if jav_detail.posters and jav_detail.posters.full:
+            mediainfo.poster_path = jav_detail.posters.full
+        elif jav_detail.poster:
+            mediainfo.poster_path = jav_detail.poster
+
+        # 背景
+        if jav_detail.background and jav_detail.background.full:
+            mediainfo.backdrop_path = jav_detail.background.full
+
+        # 时长
+        if jav_detail.duration:
+            mediainfo.runtime = jav_detail.duration // 60  # 秒转分钟
+
+        # 演员
+        if jav_detail.performers:
+            mediainfo.actor = [{"name": p.name} for p in jav_detail.performers]
+
+        # 标签
+        if jav_detail.tags:
+            mediainfo.genres = [{"id": str(t.id), "name": t.name} for t in jav_detail.tags]
+
+        # 日系分类
+        category = self._build_category(self.SUBCATEGORY_JAPANESE)
+        mediainfo.set_category(category)
+        logger.info(f"ThePornDB JAV: 分类设置为 '{category}' (番号: {jav_detail.external_id})")
+
+        return mediainfo
+
+    def _recognize_with_theporndb_jav(self, number: str) -> Optional[MediaInfo]:
+        """
+        使用 ThePornDB JAV API 识别媒体
+
+        使用两步法：先网页搜索获取 UUID，再 API 获取详情
+
+        :param number: 番号
+        :return: 识别结果
+        """
+        logger.info(f"ThePornDB JAV: 正在识别 '{number}' ...")
+
+        try:
+            # 使用两步法：先搜索获取 UUID，再获取详情
+            details = self._theporndb_client.search_jav_to_detail(number)
+            if not details:
+                logger.debug(f"ThePornDB JAV: '{number}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            detail = details[0]
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_theporndb_jav_to_mediainfo(detail)
+
+            self._add_log(number, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         "来源: ThePornDB JAV", category=self._build_category(self.SUBCATEGORY_JAPANESE))
+            logger.info(f"ThePornDB JAV: 识别成功 - {number} -> {mediainfo.title} ({mediainfo.year})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ThePornDB JAV: 识别异常 - {str(e)}")
+            return None
+
+    async def _async_recognize_with_theporndb_jav(self, number: str) -> Optional[MediaInfo]:
+        """
+        异步使用 ThePornDB JAV API 识别媒体
+
+        使用两步法：先网页搜索获取 UUID，再 API 获取详情
+
+        :param number: 番号
+        :return: 识别结果
+        """
+        logger.info(f"ThePornDB JAV: 正在异步识别 '{number}' ...")
+
+        try:
+            # 使用两步法：先搜索获取 UUID，再获取详情
+            details = await self._theporndb_client.async_search_jav_to_detail(number)
+            if not details:
+                logger.debug(f"ThePornDB JAV: '{number}' 未找到匹配结果")
+                return None
+
+            # 取第一个结果
+            detail = details[0]
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_theporndb_jav_to_mediainfo(detail)
+
+            self._add_log(number, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         "来源: ThePornDB JAV", category=self._build_category(self.SUBCATEGORY_JAPANESE))
+            logger.info(f"ThePornDB JAV: 异步识别成功 - {number} -> {mediainfo.title} ({mediainfo.year})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"ThePornDB JAV: 异步识别异常 - {str(e)}")
+            return None
+
     def recognize_media(self, meta: MetaBase = None,
                         mtype: MediaType = None,
                         **kwargs) -> Optional[MediaInfo]:
@@ -2106,8 +2528,29 @@ class MetatubeSource(_PluginBase):
 
         logger.info(f"Metatube: 正在识别番号 {number} (分类: {detected_category}) ...")
 
-        # Step 4: 根据分类选择识别方式
-        # 欧美系内容优先使用 ThePornDB
+        # Step 4: 根据分类和配置选择识别方式
+        # 优先级: ByteMuse -> ThePornDB JAV (JAV格式) -> ThePornDB (欧美) -> Metatube
+
+        # 1. 首先尝试 ByteMuse（如果启用）
+        if self._bytemuse_enabled:
+            logger.info(f"Metatube: 使用 ByteMuse 作为主要识别源")
+            result = self._recognize_with_bytemuse(number)
+            if result:
+                return result
+            # ByteMuse 识别失败，继续尝试其他源
+            logger.info(f"Metatube: ByteMuse 识别失败，尝试备用识别源")
+
+        # 2. 尝试 ThePornDB JAV（如果是 JAV 格式且已启用）
+        is_jav = self._is_jav_number(number)
+        if is_jav and self._theporndb_enabled and self._theporndb_api_token:
+            logger.info(f"Metatube: 检测到 JAV 格式番号，使用 ThePornDB JAV API")
+            result = self._recognize_with_theporndb_jav(number)
+            if result:
+                return result
+            # ThePornDB JAV 识别失败，继续尝试其他源
+            logger.info(f"Metatube: ThePornDB JAV 识别失败，继续尝试备用识别源")
+
+        # 3. 欧美系内容使用 ThePornDB
         if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled and self._theporndb_api_token:
             logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
             result = self._recognize_with_theporndb(title)
@@ -2200,8 +2643,29 @@ class MetatubeSource(_PluginBase):
 
         logger.info(f"Metatube: 正在异步识别番号 {number} ...")
 
-        # Step 4: 根据分类选择识别方式
-        # 欧美系内容优先使用 ThePornDB
+        # Step 4: 根据分类和配置选择识别方式
+        # 优先级: ByteMuse -> ThePornDB JAV (JAV格式) -> ThePornDB (欧美) -> Metatube
+
+        # 1. 首先尝试 ByteMuse（如果启用）
+        if self._bytemuse_enabled:
+            logger.info(f"Metatube: 使用 ByteMuse 作为主要识别源（异步）")
+            result = await self._async_recognize_with_bytemuse(number)
+            if result:
+                return result
+            # ByteMuse 识别失败，继续尝试其他源
+            logger.info(f"Metatube: ByteMuse 异步识别失败，尝试备用识别源")
+
+        # 2. 尝试 ThePornDB JAV（如果是 JAV 格式且已启用）
+        is_jav = self._is_jav_number(number)
+        if is_jav and self._theporndb_enabled and self._theporndb_api_token:
+            logger.info(f"Metatube: 检测到 JAV 格式番号，使用 ThePornDB JAV API（异步）")
+            result = await self._async_recognize_with_theporndb_jav(number)
+            if result:
+                return result
+            # ThePornDB JAV 识别失败，继续尝试其他源
+            logger.info(f"Metatube: ThePornDB JAV 异步识别失败，继续尝试备用识别源")
+
+        # 3. 欧美系内容使用 ThePornDB
         if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled:
             logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
             result = await self._async_recognize_with_theporndb(title)

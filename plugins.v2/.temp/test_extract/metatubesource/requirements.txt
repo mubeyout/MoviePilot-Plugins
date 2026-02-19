@@ -1,0 +1,9 @@
+# MoviePilot-Plugins MetatubeSource 插件依赖
+# Python 标准库依赖（无需额外安装）
+
+# 第三方依赖（由 MoviePilot 主程序提供）
+# requests - HTTP 请求（用于 API 调用）
+# pydantic - 数据验证（用于 schema 定义）
+
+# 注意：此插件不包含额外的依赖要求
+# 所有依赖由 MoviePilot 主程序提供

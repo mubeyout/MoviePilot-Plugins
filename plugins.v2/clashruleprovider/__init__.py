@@ -34,7 +34,7 @@ class ClashRuleProvider(_PluginBase):
     # 插件描述
     plugin_desc = "随时为Clash添加一些额外的规则。"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Mihomo_Meta_A.png"
+    plugin_icon = "Mihomo_Meta_A.png"
     # 插件版本
     plugin_version = "2.1.2"
     # 插件作者
@@ -49,9 +49,9 @@ class ClashRuleProvider(_PluginBase):
     auth_level = 1
 
     # Runtime variables
-    services: ClashRuleProviderService
-    api: ClashRuleProviderApi
-    state: PluginState
+    services: ClashRuleProviderService | None = None
+    api: ClashRuleProviderApi | None = None
+    state: PluginState | None = None
     scheduler: AsyncIOScheduler | None = None
 
     def init_plugin(self, conf: dict = None):
@@ -59,12 +59,21 @@ class ClashRuleProvider(_PluginBase):
         self.state = PluginState(self.__class__.__name__)
         self.upgrade_data()
 
+        # 如果没有提供配置，从存储中加载
+        if not conf:
+            conf = self.get_config() or {}
+
         if conf:
             try:
                 self.state.config = PluginConfig.model_validate(conf)
             except ValidationError as e:
                 logger.error(f"解析配置出错: {e}")
-                return
+                # 配置解析失败，设置默认配置
+                self.state.config = PluginConfig()
+        else:
+            # 没有配置，使用默认配置
+            self.state.config = PluginConfig()
+
         self._update_config()
 
         if self.state.config.enabled:
@@ -92,6 +101,14 @@ class ClashRuleProvider(_PluginBase):
                 logger.error("Invalid clash template yaml")
         except yaml.YAMLError as exc:
             logger.error(f"Error loading clash template yaml: {exc}")
+        except ValidationError as ve:
+            logger.error(f"Error validating clash template config:")
+            logger.error(f"  验证错误数量: {ve.error_count()}")
+            for i, error in enumerate(ve.errors()[:5]):
+                loc = ' -> '.join(str(x) for x in error['loc'])
+                logger.error(f"  错误 {i+1}: [{loc}] {error['msg']}")
+            if ve.error_count() > 5:
+                logger.error(f"  ... 还有 {ve.error_count() - 5} 个错误")
         except Exception as ve:
             logger.error(f"Error validating clash template config: {ve}")
 
@@ -124,7 +141,7 @@ class ClashRuleProvider(_PluginBase):
                                    run_date=now + timedelta(seconds=4), misfire_grace_time=Constant.MISFIRE_GRACE_TIME)
 
     def get_state(self) -> bool:
-        return self.state.config.enabled
+        return bool(self.state and self.state.config and self.state.config.enabled)
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
@@ -140,6 +157,8 @@ class ClashRuleProvider(_PluginBase):
         return [], {}
 
     def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
+        if not self.state or not self.state.config:
+            return []
         components = [
             {"key": "clash_info", "name": "Clash Info"},
             {"key": "traffic_stats", "name": "Traffic Stats"}
@@ -147,6 +166,8 @@ class ClashRuleProvider(_PluginBase):
         return [c for c in components if c.get("name") in self.state.config.dashboard_components]
 
     def get_dashboard(self, key: str, **kwargs) -> Optional[Tuple[Dict[str, Any], Dict[str, Any], List[dict]]]:
+        if not self.state or not self.state.config:
+            return None
         clash_available = bool(self.state.config.dashboard_url and self.state.config.dashboard_secret)
         components = {'clash_info': {'title': 'Clash Info', 'md': 4},
                       'traffic_stats': {'title': 'Traffic Stats', 'md': 8}}
@@ -172,7 +193,9 @@ class ClashRuleProvider(_PluginBase):
                 logger.error(f"退出插件失败：{e}")
 
     def get_service(self) -> List[Dict[str, Any]]:
-        if self.get_state() and self.state.config.auto_update_subscriptions and self.state.config.sub_links:
+        if not self.state or not self.state.config or not self.get_state():
+            return []
+        if self.state.config.auto_update_subscriptions and self.state.config.sub_links:
             return [{
                 "id": "ClashRuleProvider",
                 "name": "定时更新订阅",
@@ -183,7 +206,12 @@ class ClashRuleProvider(_PluginBase):
         return []
 
     async def refresh_subscription_service(self):
+        if not self.state or not self.state.config:
+            return
         if not self.state.config.sub_links:
+            return
+        if not self.services:
+            logger.warning("服务未初始化，无法刷新订阅")
             return
         res = await self.services.async_refresh_subscriptions()
         messages = []
@@ -216,10 +244,14 @@ class ClashRuleProvider(_PluginBase):
             )
 
     def _update_config(self):
+        if not self.state or not self.state.config:
+            return
         conf = self.state.config.model_dump(by_alias=True)
         self.update_config(conf)
 
     def update_best_cf_ip(self, ips: List[str]):
+        if not self.state or not self.state.config:
+            return
         self.state.config.best_cf_ip = [*ips]
         conf = self.get_config()
         conf['best_cf_ip'] = self.state.config.best_cf_ip
@@ -227,6 +259,8 @@ class ClashRuleProvider(_PluginBase):
 
     @eventmanager.register(EventType.PluginAction)
     def update_cloudflare_ips_handler(self, event: Event):
+        if not self.state or not self.state.config:
+            return
         event_data = event.event_data
         if not event_data or event_data.get("action") != "update_cloudflare_ips":
             return

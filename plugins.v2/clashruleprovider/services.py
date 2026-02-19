@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple, Iterable, TypeVar
 import jsonpatch
 from fastapi import HTTPException
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pydantic import ValidationError
 
 from app.core.cache import cached
 from app.core.config import settings
@@ -297,6 +298,14 @@ class ClashRuleProviderService:
                         logger.debug(f"Failed to convert proxy link: {repr(err)}")
                 ps.add(pd)
                 success_count += 1
+            except ValidationError as err:
+                success = False
+                proxy_name = item[1].get('name', 'unknown') if isinstance(item[1], dict) else 'unknown'
+                error_messages += f"[{proxy_name}] "
+                for e in err.errors()[:2]:
+                    loc = ' -> '.join(str(x) for x in e['loc'])
+                    error_messages += f"[{loc}] {e['msg']}; "
+                error_messages += "\n"
             except Exception as err:
                 success = False
                 error_messages += f"{err}\n"
@@ -788,6 +797,93 @@ class ClashRuleProviderService:
         self.append_top_rules(rules)
         return True, ""
 
+    def import_proxy_groups(self, vehicle: str, payload: str) -> tuple[bool, str]:
+        """导入代理组"""
+        if vehicle != 'YAML':
+            return False, "仅支持 YAML 格式"
+        try:
+            imported = yaml.load(payload, Loader=yaml.SafeLoader)
+            if not isinstance(imported, dict):
+                return False, "无效的输入"
+        except yaml.YAMLError as err:
+            logger.error(f"Failed to import proxy groups: {repr(err)}")
+            return False, 'YAML 格式错误'
+
+        proxy_groups_list = imported.get(ClashKey.PROXY_GROUPS, [])
+        if not proxy_groups_list:
+            return False, "无可用代理组"
+
+        success_count = 0
+        error_messages = ''
+        success = True
+        pgs = self.state.proxy_groups
+
+        for item in proxy_groups_list:
+            try:
+                proxy_group = ProxyGroup.model_validate(item)
+                meta = Metadata(source=DataSource.MANUAL)
+                pgd = ProxyGroupData(data=proxy_group, name=proxy_group.name, meta=meta)
+                pgs.add(pgd)
+                success_count += 1
+            except ValidationError as err:
+                success = False
+                pg_name = item.get('name', 'unknown') if isinstance(item, dict) else 'unknown'
+                error_messages += f"[{pg_name}] {err.error_count()} 个验证错误: "
+                for e in err.errors()[:2]:
+                    loc = ' -> '.join(str(x) for x in e['loc'])
+                    error_messages += f"[{loc}] {e['msg']}; "
+                error_messages += "\n"
+            except Exception as err:
+                success = False
+                error_messages += f"{err}\n"
+
+        message = f"导入 {success_count}/{len(proxy_groups_list)} 个代理组. \n{error_messages}"
+        self.state.proxy_groups = pgs
+        return success, message
+
+    def import_rule_providers(self, vehicle: str, payload: str) -> tuple[bool, str]:
+        """导入规则集合"""
+        if vehicle != 'YAML':
+            return False, "仅支持 YAML 格式"
+        try:
+            imported = yaml.load(payload, Loader=yaml.SafeLoader)
+            if not isinstance(imported, dict):
+                return False, "无效的输入"
+        except yaml.YAMLError as err:
+            logger.error(f"Failed to import rule providers: {repr(err)}")
+            return False, 'YAML 格式错误'
+
+        rule_providers_dict = imported.get(ClashKey.RULE_PROVIDERS, {})
+        if not rule_providers_dict:
+            return False, "无可用规则集合"
+
+        success_count = 0
+        error_messages = ''
+        success = True
+        rps = self.state.rule_providers
+
+        for name, item in rule_providers_dict.items():
+            try:
+                rule_provider = RuleProvider.model_validate(item)
+                meta = Metadata(source=DataSource.MANUAL)
+                rpd = RuleProviderData(name=name, data=rule_provider, meta=meta)
+                rps.add(rpd)
+                success_count += 1
+            except ValidationError as err:
+                success = False
+                error_messages += f"[{name}] {err.error_count()} 个验证错误: "
+                for e in err.errors()[:2]:
+                    loc = ' -> '.join(str(x) for x in e['loc'])
+                    error_messages += f"[{loc}] {e['msg']}; "
+                error_messages += "\n"
+            except Exception as err:
+                success = False
+                error_messages += f"{name}: {err}\n"
+
+        message = f"导入 {success_count}/{len(rule_providers_dict)} 个规则集合. \n{error_messages}"
+        self.state.rule_providers = rps
+        return success, message
+
     def get_ruleset(self, name: str) -> Optional[str]:
         ruleset_name = self.state.ruleset_names.get(name)
         if ruleset_name is None:
@@ -859,7 +955,7 @@ class ClashRuleProviderService:
                 if not proxies:
                     raise ValueError("Unknown content type")
                 rs = {
-                    ClashKey.PROXIES: proxies.values(),
+                    ClashKey.PROXIES: list(proxies.values()),  # Convert dict_values to list
                     ClashKey.PROXY_GROUPS: [
                         {ClashKey.NAME: "All Proxies", 'type': 'select', 'include-all-proxies': True}
                     ]
@@ -868,8 +964,38 @@ class ClashRuleProviderService:
             if not isinstance(rs, dict):
                 raise ValueError("Subscription content is not a valid dictionary.")
             rs: dict[str, Any] = rs
-            logger.info(f"已刷新: {UtilsProvider.get_url_domain(url)}. 节点数量: {len(rs.get(ClashKey.PROXIES, []))}")
+
+            # 诊断：检查订阅内容中的代理类型
+            proxies_list = rs.get(ClashKey.PROXIES, [])
+            if proxies_list:
+                proxy_types = set()
+                for p in proxies_list[:10]:  # 只检查前10个代理
+                    if isinstance(p, dict):
+                        proxy_type = p.get('type', 'unknown')
+                        proxy_types.add(proxy_type)
+                logger.info(f"已刷新: {UtilsProvider.get_url_domain(url)}. 节点数量: {len(proxies_list)}. 代理类型: {proxy_types}")
+
             conf = ClashConfig.model_validate(rs)
+        except ValidationError as e:
+            domain = UtilsProvider.get_url_domain(url)
+            logger.error(f"配置验证失败，订阅源: {domain}")
+            logger.error(f"验证错误数量: {e.error_count()}")
+            # 输出前5个错误详情
+            for i, error in enumerate(e.errors()[:5]):
+                loc = ' -> '.join(str(x) for x in error['loc'])
+                logger.error(f"  错误 {i+1}: [{loc}] {error['msg']} (输入值: {error['input']})")
+            if e.error_count() > 5:
+                logger.error(f"  ... 还有 {e.error_count() - 5} 个错误")
+            # 尝试输出代理类型信息
+            if isinstance(rs, dict):
+                proxies_list = rs.get(ClashKey.PROXIES, [])
+                if proxies_list:
+                    all_proxy_types = set()
+                    for p in proxies_list:
+                        if isinstance(p, dict):
+                            all_proxy_types.add(p.get('type', 'unknown'))
+                    logger.error(f"  订阅中的代理类型: {all_proxy_types}")
+            return None, None
         except Exception as e:
             logger.error(f"解析配置出错： {e}")
             return None, None

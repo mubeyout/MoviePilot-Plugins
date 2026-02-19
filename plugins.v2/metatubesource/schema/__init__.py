@@ -1,6 +1,97 @@
-from typing import Optional, List
-from pydantic import BaseModel, Field
+from typing import Optional, List, Union
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
+
+
+# ==================== Byte-Muse 数据模型 ====================
+
+class ByteMuseActor(BaseModel):
+    """Byte-Muse 演员"""
+    name: str = Field(default="", description="演员名称")
+    role: Optional[str] = Field(default=None, description="角色类型")
+
+    class Config:
+        populate_by_name = True
+
+
+class ByteMuseMovie(BaseModel):
+    """Byte-Muse 电影搜索结果"""
+    id: str = Field(default="", description="电影ID")
+    code: str = Field(default="", description="番号")
+    title: str = Field(default="", description="标题")
+    cn_title: Optional[str] = Field(default=None, description="中文标题")
+    actors: List[ByteMuseActor] = Field(default_factory=list, description="演员列表")
+    casts: Optional[str] = Field(default=None, alias="casts", description="演员(逗号分隔)")
+    studio: Optional[str] = Field(default=None, description="制作商")
+    publisher: Optional[str] = Field(default=None, alias="publisher", description="发行商")
+    label: Optional[str] = Field(default=None, description="标签")
+    series: Optional[str] = Field(default=None, description="系列")
+    release_date: Optional[str] = Field(default=None, description="发布日期")
+    duration: Optional[int] = Field(default=None, description="时长(秒)")
+    runtime: Optional[int] = Field(default=None, description="时长(分钟)")
+    director: Optional[str] = Field(default=None, description="导演")
+    producer: Optional[str] = Field(default=None, description="制片人")
+    cover_url: str = Field(default="", alias="banner", description="封面URL")
+    poster_url: str = Field(default="", alias="poster", description="海报URL")
+    thumb_url: str = Field(default="", description="缩略图URL")
+    preview_url: Optional[str] = Field(default=None, description="预览URL")
+    still_photo: Optional[str] = Field(default=None, description="剧照")
+    score: Optional[float] = Field(default=None, description="评分")
+    genres: Union[str, List[str]] = Field(default="", description="类型标签")
+    summary: str = Field(default="", description="简介")
+    images: List[str] = Field(default_factory=list, description="预览图列表")
+    provider: str = Field(default="ByteMuse", description="数据来源")
+    status: Optional[str] = Field(default=None, description="状态")
+    mode: Optional[str] = Field(default=None, description="模式")
+    is_exist_server: Optional[bool] = Field(default=None, alias="is_exist_server", description="服务器是否存在")
+
+    @field_validator('genres', mode='before')
+    @classmethod
+    def normalize_genres(cls, v):
+        """将 genres 标准化为列表"""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            if v == "":
+                return []
+            return [g.strip() for g in v.split(',') if g.strip()]
+        return v
+
+    @field_validator('preview_url', 'still_photo', mode='before')
+    @classmethod
+    def normalize_optional_string(cls, v):
+        """将可选字符串字段标准化"""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v if v.strip() else None
+        # 处理非字符串类型（如数字、布尔值等）
+        return str(v) if v is not None else None
+
+    class Config:
+        populate_by_name = True
+
+
+class ByteMuseSearchData(BaseModel):
+    """Byte-Muse 搜索数据"""
+    codes: List[ByteMuseMovie] = Field(default_factory=list, description="搜索结果列表")
+    total: int = Field(default=0, description="总数")
+
+    class Config:
+        populate_by_name = True
+
+
+class ByteMuseSearchResponse(BaseModel):
+    """Byte-Muse 搜索响应"""
+    success: bool = Field(default=False, description="是否成功")
+    message: Optional[str] = Field(default=None, description="消息")
+    data: Optional[ByteMuseSearchData] = Field(default=None, description="搜索数据")
+
+    class Config:
+        populate_by_name = True
+
+
+# ==================== Metatube 数据模型 ====================
 
 
 class MetatubeMovie(BaseModel):
@@ -163,3 +254,129 @@ class ThePornDBSceneDetail(BaseModel):
 class ThePornDBDetailResponse(BaseModel):
     """ThePornDB 详情响应"""
     data: Optional[ThePornDBSceneDetail] = None
+
+
+# ==================== ThePornDB JAV 数据模型 ====================
+
+class ThePornDBJAVPerformerExtra(BaseModel):
+    """ThePornDB JAV 演员额外信息 (extra 字段)"""
+    gender: Optional[str] = Field(default=None, description="性别")
+    birthday: Optional[str] = Field(default=None, description="生日")
+    birthplace: Optional[str] = Field(default=None, description="出生地")
+    birthplace_code: Optional[str] = Field(default=None, description="出生地代码")
+    cupsize: Optional[str] = Field(default=None, description="罩杯")
+    ethnicity: Optional[str] = Field(default=None, description="种族")
+    eye_colour: Optional[str] = Field(default=None, description="眼睛颜色")
+    hair_colour: Optional[str] = Field(default=None, description="头发颜色")
+    height: Optional[str] = Field(default=None, description="身高")
+    measurements: Optional[str] = Field(default=None, description="三围")
+    nationality: Optional[str] = Field(default=None, description="国籍")
+    weight: Optional[str] = Field(default=None, description="体重")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVPerformerParent(BaseModel):
+    """ThePornDB JAV 演员父信息 (parent 字段)"""
+    id: str = Field(default="", description="UUID")
+    internal_id: int = Field(default=0, alias="_id", description="内部ID")
+    slug: str = Field(default="", description="Slug")
+    name: str = Field(default="", description="名称")
+    full_name: Optional[str] = Field(default=None, description="全名")
+    extras: ThePornDBJAVPerformerExtra = Field(default_factory=ThePornDBJAVPerformerExtra, description="额外信息")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVPerformer(BaseModel):
+    """ThePornDB JAV 演员"""
+    id: str = Field(default="", description="UUID")
+    internal_id: int = Field(default=0, alias="_id", description="内部ID")
+    slug: str = Field(default="", description="Slug")
+    name: str = Field(default="", description="演员名称")
+    extra: ThePornDBJAVPerformerExtra = Field(default_factory=ThePornDBJAVPerformerExtra, description="额外信息")
+    parent: Optional[ThePornDBJAVPerformerParent] = Field(default=None, description="父信息")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVImage(BaseModel):
+    """ThePornDB JAV 图片 (支持 full/large/medium/small)"""
+    full: str = Field(default="", description="原图URL")
+    large: str = Field(default="", description="大图URL")
+    medium: str = Field(default="", description="中图URL")
+    small: str = Field(default="", description="小图URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVSite(BaseModel):
+    """ThePornDB JAV 站点信息"""
+    id: int = Field(default=0, description="站点ID")
+    name: str = Field(default="", description="站点名称")
+    url: str = Field(default="", description="站点URL")
+    logo: Optional[str] = Field(default=None, description="Logo URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVBackground(BaseModel):
+    """ThePornDB JAV 背景图片"""
+    url: str = Field(default="", description="原图URL")
+    large: str = Field(default="", description="大图URL")
+    medium: str = Field(default="", description="中图URL")
+    small: str = Field(default="", description="小图URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVScene(BaseModel):
+    """ThePornDB JAV 搜索结果"""
+    id: int = Field(default=0, description="场景ID (数字)")
+    uuid: Optional[str] = Field(default=None, description="场景UUID (可能不存在)")
+    title: str = Field(default="", description="标题")
+    slug: str = Field(default="", description="Slug (用于构建详情URL)")
+    date: Optional[str] = Field(default=None, description="日期")
+    duration: Optional[int] = Field(default=None, description="时长(秒)")
+    link: str = Field(default="", description="页面链接")
+    type: str = Field(default="JAV", description="类型")
+    background: ThePornDBJAVBackground = Field(default_factory=ThePornDBJAVBackground, description="背景图片")
+    site: ThePornDBJAVSite = Field(default_factory=ThePornDBJAVSite, description="站点信息")
+    performers: List[ThePornDBJAVPerformer] = Field(default_factory=list, description="演员列表")
+
+    class Config:
+        populate_by_name = True
+
+
+class ThePornDBJAVSearchResponse(BaseModel):
+    """ThePornDB JAV 搜索响应 (HTML 页面嵌入的 JSON)"""
+    data: List[ThePornDBJAVScene] = Field(default_factory=list)
+
+
+class ThePornDBJAVDetail(BaseModel):
+    """ThePornDB JAV 详情"""
+    id: str = Field(default="", description="UUID")
+    internal_id: int = Field(default=0, alias="_id", description="内部ID")
+    title: str = Field(default="", description="标题")
+    type: str = Field(default="JAV", description="类型")
+    slug: str = Field(default="", description="Slug")
+    external_id: str = Field(default="", alias="external_id", description="外部ID/番号")
+    description: str = Field(default="", description="描述")
+    date: Optional[str] = Field(default=None, description="日期")
+    duration: Optional[int] = Field(default=None, description="时长(秒)")
+    poster: str = Field(default="", description="海报URL")
+    posters: ThePornDBJAVImage = Field(default_factory=ThePornDBJAVImage, description="海报图片")
+    background: ThePornDBJAVImage = Field(default_factory=ThePornDBJAVImage, description="背景图片")
+    site: ThePornDBJAVSite = Field(default_factory=ThePornDBJAVSite, description="站点信息")
+    performers: List[ThePornDBJAVPerformer] = Field(default_factory=list, description="演员列表")
+    tags: List[ThePornDBTag] = Field(default_factory=list, description="标签列表")
+    url: str = Field(default="", description="来源链接")
+
+    class Config:
+        populate_by_name = True

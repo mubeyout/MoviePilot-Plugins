@@ -24,7 +24,6 @@ class AnytlsConverter(BaseConverter):
                 "type": "anytls",
                 "server": server,
                 "port": port,
-                "username": username,
                 "password": password,
                 "sni": sni,
                 "fingerprint": fingerprint,

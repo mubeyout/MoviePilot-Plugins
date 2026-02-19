@@ -132,6 +132,37 @@ class ClashRuleProviderApi:
     def get_rule_providers(self) -> schemas.Response:
         return schemas.Response(success=True, data=self.services.state.all_rule_providers)
 
+    @apis.register(path="/rule-providers/import", methods=["POST"], auth="bear", summary="导入规则集合")
+    async def import_rule_providers(self, request: Request):
+        """导入规则集合 - 使用原始请求处理以避免 422 错误"""
+        try:
+            body = await request.body()
+            logger.info(f"导入规则集合请求体: {body[:500]}...")  # 记录前500字符
+
+            import json
+            try:
+                data = await request.json()
+            except json.JSONDecodeError:
+                return schemas.Response(success=False, message="请求体必须是有效的 JSON 格式")
+
+            vehicle = data.get('vehicle')
+            payload = data.get('payload')
+
+            if not vehicle:
+                return schemas.Response(success=False, message="缺少 vehicle 参数")
+            if vehicle != "YAML":
+                return schemas.Response(success=False, message="仅支持 YAML 格式")
+            if not payload:
+                return schemas.Response(success=False, message="缺少 payload 参数")
+
+            logger.info(f"导入规则集合: vehicle={vehicle}, payload长度={len(payload)}")
+            success, message = self.services.import_rule_providers(vehicle, payload)
+            logger.info(f"导入规则集合结果: success={success}, message={message}")
+            return schemas.Response(success=success, message=message)
+        except Exception as e:
+            logger.error(f"导入规则集合异常: {e}")
+            return schemas.Response(success=False, message=f"导入失败: {str(e)}")
+
     @apis.register(path="/rule-providers/{name}", methods=["POST"], auth="bear", summary="添加规则集合")
     def add_rule_provider(self, name: str, item: RuleProvider):
         success, message = self.services.add_rule_provider(name, item)
@@ -164,9 +195,23 @@ class ClashRuleProviderApi:
         return schemas.Response(success=True)
 
     @apis.register(path="/proxies", methods=["PUT"], auth="bear", summary="添加出站代理")
-    def import_proxies(self, vehicle: Literal["YAML", "LINK"] = Body(...), payload: str = Body(...)):
-        success, message = self.services.import_proxies(vehicle, payload)
-        return schemas.Response(success=success, message=message)
+    async def import_proxies(self, request: Request):
+        """添加出站代理 - 使用原始请求处理以避免 422 错误"""
+        try:
+            data = await request.json()
+            vehicle = data.get('vehicle')
+            payload = data.get('payload')
+
+            if not vehicle or not payload:
+                return schemas.Response(success=False, message="缺少必要参数")
+
+            logger.info(f"导入代理: vehicle={vehicle}, payload长度={len(payload)}")
+            success, message = self.services.import_proxies(vehicle, payload)
+            logger.info(f"导入代理结果: success={success}, message={message}")
+            return schemas.Response(success=success, message=message)
+        except Exception as e:
+            logger.error(f"导入代理异常: {e}")
+            return schemas.Response(success=False, message=f"导入失败: {str(e)}")
 
     @apis.register(path="/proxies/{name}", methods=["PATCH"], auth="bear", summary="更新出站代理")
     def update_proxy(self, name: str, source: DataSource = Body(...), proxy: Proxy = Body(...)) -> schemas.Response:
@@ -209,6 +254,27 @@ class ClashRuleProviderApi:
         success, message = self.services.add_proxy_group(item)
         return schemas.Response(success=success, message=message)
 
+    @apis.register(path="/proxy-groups/import", methods=["POST"], auth="bear", summary="导入代理组")
+    async def import_proxy_groups(self, request: Request):
+        """导入代理组 - 使用原始请求处理以避免 422 错误"""
+        try:
+            data = await request.json()
+            vehicle = data.get('vehicle')
+            payload = data.get('payload')
+
+            if not vehicle or not payload:
+                return schemas.Response(success=False, message="缺少必要参数")
+            if vehicle != "YAML":
+                return schemas.Response(success=False, message="仅支持 YAML 格式")
+
+            logger.info(f"导入代理组: vehicle={vehicle}, payload长度={len(payload)}")
+            success, message = self.services.import_proxy_groups(vehicle, payload)
+            logger.info(f"导入代理组结果: success={success}, message={message}")
+            return schemas.Response(success=success, message=message)
+        except Exception as e:
+            logger.error(f"导入代理组异常: {e}")
+            return schemas.Response(success=False, message=f"导入失败: {str(e)}")
+
     @apis.register(path="/proxy-groups/{name}", methods=["PATCH"], auth="bear", summary="更新代理组")
     def update_proxy_group(self, name: str, source: DataSource = Body(...), proxy_group: ProxyGroup = Body(...)):
         success, message = self.services.update_proxy_group(name, source, proxy_group)
@@ -231,9 +297,24 @@ class ClashRuleProviderApi:
         return PlainTextResponse(content=res, media_type="application/x-yaml")
 
     @apis.register(path="/import", methods=["POST"], auth="bear", summary="导入规则")
-    def import_rules(self, vehicle: Literal["YAML"] = Body(...), payload: str = Body(...)):
-        self.services.import_rules(vehicle, payload)
-        return schemas.Response(success=True)
+    async def import_rules(self, request: Request):
+        """导入规则 - 使用原始请求处理以避免 422 错误"""
+        try:
+            data = await request.json()
+            vehicle = data.get('vehicle')
+            payload = data.get('payload')
+
+            if not vehicle or not payload:
+                return schemas.Response(success=False, message="缺少必要参数")
+            if vehicle != "YAML":
+                return schemas.Response(success=False, message="仅支持 YAML 格式")
+
+            logger.info(f"导入规则: vehicle={vehicle}, payload长度={len(payload)}")
+            self.services.import_rules(vehicle, payload)
+            return schemas.Response(success=True)
+        except Exception as e:
+            logger.error(f"导入规则异常: {e}")
+            return schemas.Response(success=False, message=f"导入失败: {str(e)}")
 
     @apis.register(path="/hosts", methods=["GET"], auth="bear", summary="获取 Hosts")
     def get_hosts(self):

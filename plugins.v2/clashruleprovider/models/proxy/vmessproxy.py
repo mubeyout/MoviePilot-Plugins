@@ -1,6 +1,6 @@
 from typing import Optional, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from .proxybase import ProxyBase
 from .tlsmixin import TLSMixin
@@ -16,3 +16,11 @@ class VmessProxy(ProxyBase, TLSMixin, NetworkMixin):
     packet_encoding: Optional[Literal['packetaddr', 'xudp']] = Field(None, alias='packet-encoding')
     global_padding: Optional[bool] = Field(None, alias='global-padding')
     authenticated_length: Optional[bool] = Field(None, alias='authenticated-length')
+
+    @field_validator('packet_encoding', mode='before')
+    @classmethod
+    def empty_string_to_none(cls, v):
+        """Convert empty string to None for packet_encoding"""
+        if v == '':
+            return None
+        return v

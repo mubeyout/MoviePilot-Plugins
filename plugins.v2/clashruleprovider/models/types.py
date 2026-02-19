@@ -46,6 +46,7 @@ class RuleSet(StrEnum):
 class ClashKey(StrEnum):
     PROXIES = "proxies"
     PROXY_GROUPS = "proxy-groups"
+    RULE_PROVIDERS = "rule-providers"
     NAME = "name"
     RULES = "rules"
 

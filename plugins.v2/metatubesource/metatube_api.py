@@ -104,7 +104,7 @@ class MetatubeApiClient:
         r'(\d{5,6})[-_](\d{3})',
     ]
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8080",
+    def __init__(self, base_url: str = "http://10.0.0.1:3244",
                  timeout: int = 10, proxies: Dict[str, str] = None):
         """
         初始化 Metatube API 客户端

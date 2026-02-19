@@ -225,9 +225,49 @@ class ClashConfig(BaseModel):
         self._raw_proxies = value
 
     def merge(self, other: 'ClashConfig') -> 'ClashConfig':
-        self.proxies += other.proxies
-        self.proxy_groups += other.proxy_groups
+        # 合并代理节点 - 使用名称去重，保留后面的节点
+        existing_proxy_names = {p.name for p in self.proxies}
+        for proxy in other.proxies:
+            if proxy.name not in existing_proxy_names:
+                self.proxies.append(proxy)
+            else:
+                # 如果名称重复，尝试添加后缀以避免冲突
+                new_name = proxy.name
+                counter = 1
+                while new_name in existing_proxy_names:
+                    new_name = f"{proxy.name}-{counter}"
+                    counter += 1
+                if new_name != proxy.name:
+                    proxy.name = new_name
+                    logger.info(f"代理节点名称冲突，重命名: {proxy.name} -> {new_name}")
+                self.proxies.append(proxy)
+                existing_proxy_names.add(new_name)
+
+        # 合并代理组 - 使用名称去重，保留后面的代理组
+        existing_pg_names = {pg.name for pg in self.proxy_groups}
+        for pg in other.proxy_groups:
+            if pg.name not in existing_pg_names:
+                self.proxy_groups.append(pg)
+            else:
+                # 如果名称重复，尝试添加后缀以避免冲突
+                new_name = pg.name
+                counter = 1
+                while new_name in existing_pg_names:
+                    new_name = f"{pg.name}-{counter}"
+                    counter += 1
+                if new_name != pg.name:
+                    pg.name = new_name
+                    logger.info(f"代理组名称冲突，重命名: {pg.name} -> {new_name}")
+                self.proxy_groups.append(pg)
+                existing_pg_names.add(new_name)
+
+        # 合并规则 - 直接追加（规则允许重复）
         self.rules += other.rules
+
+        # 合并规则提供者 - 使用字典合并，后面的覆盖前面的
         self.rule_providers |= other.rule_providers
+
+        # 合并代理提供者 - 使用字典合并，后面的覆盖前面的
         self.proxy_providers |= other.proxy_providers
+
         return self

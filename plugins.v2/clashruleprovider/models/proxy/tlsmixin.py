@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ClientFingerprint(StrEnum):
@@ -14,6 +14,7 @@ class ClientFingerprint(StrEnum):
     n360 = '360'
     qq = 'qq'
     random = 'random'
+    randomized = 'randomized'  # Alternative spelling for random
 
 
 class RealityOpts(BaseModel):
@@ -24,7 +25,7 @@ class RealityOpts(BaseModel):
 
 class EchOpts(BaseModel):
     enable: bool = False
-    config: str
+    config: Optional[str] = None
 
 
 class TLSMixin(BaseModel):

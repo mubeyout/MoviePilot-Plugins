@@ -45,16 +45,31 @@
     },
     "metatubesource": {
         "name": "Metatube源",
-        "description": "通过Metatube API识别番号媒体信息，支持日系/欧美系/中文系自动分类，内置42个排除关键字，支持JSON格式关键字配置文件。",
+        "description": "通过Metatube API、ThePornDB API、Byte-Muse API 识别番号媒体信息。支持日系/欧美系/中文系自动分类，采用三级识别优先级：Metatube(核心) → ThePornDB(补充) → ByteMuse(备用)。",
         "labels": "识别",
-        "version": "1.1.0",
+        "version": "2.0.0",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png",
         "author": "MUBEY",
         "level": 1,
+        "v2": true,
         "history": {
+            "v2.0.0": "重大更新：调整识别逻辑优先级，Metatube API 作为核心识别引擎，ThePornDB 和 ByteMuse 作为补充和备用方案；新增 ThePornDB JAV 两步法 API 支持；增强分类检测和关键字配置功能",
             "v1.1.0": "重大更新：修复严重Bug，新增排除关键字功能（内置42个），JSON格式关键字配置，优化配置表单布局，增强分类检测逻辑",
             "v1.0.1": "优化插件配置和识别功能",
             "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
+        }
+    },
+    "bytemuseservices": {
+        "name": "番号探索服务聚合",
+        "description": "统一管理和配置番号媒体探索数据源插件，整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源，支持番号搜索和热门榜单功能。",
+        "labels": "探索,识别",
+        "version": "1.0.0",
+        "icon": "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png",
+        "author": "Mubey",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v1.0.0": "初始版本，整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
         }
     }
 }
