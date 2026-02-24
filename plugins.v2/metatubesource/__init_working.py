@@ -1,4 +1,3 @@
-# Category: 插件入口
 """
 Metatube 媒体识别插件
 通过 Metatube API 识别番号媒体信息
@@ -56,7 +55,6 @@ class MetatubeSource(_PluginBase):
     SUBCATEGORY_WESTERN = "欧美系"
     SUBCATEGORY_CHINESE = "中文系"
     SUBCATEGORY_OTHER = "其他"
-    SUBCATEGORY_SKIP = "__SKIP__"  # 特殊标记：应该跳过识别
 
     # 关键字配置文件路径
     KEYWORDS_FILE_PATH = "keywords.json"  # 插件根目录下的 JSON 文件
@@ -115,25 +113,27 @@ class MetatubeSource(_PluginBase):
     ]
 
     # 中文系核心关键词（主流传媒品牌）
-    # 优化: 移除单字关键字(屄,逼,屌,操,干)和通用词汇(原创,独家,首发,精品,高清,超清,蓝光)
     BUILT_IN_CHINESE_KEYWORDS = [
         # === 主流传媒品牌 ===
         "MD", "MD-", "MDCN", "麻豆", "麻豆傳媒", "MADOU",
         "MX", "MX-", "精东", "精東傳媒",
         "TM", "TM-", "天美", "天美傳媒",
         "PMC", "PMC-", "蜜桃", "蜜桃傳媒",
-        "91制片", "九一制片",
+        "AV", "AV-", "91制片", "九一制片",
         "TW", "TW-", "台湾", "台灣傳媒",
 
         # === 网红/探花系列 ===
         "约炮", "网红", "探花", "小宝寻花",
         "李寻花", "沈先生",
 
-        # === 成人内容标识 ===
+        # === 常见标识 ===
         "传媒", "傳媒", "国产", "自拍", "偷拍", "露脸",
+        "原创", "独家", "首发", "精品",
+
+        # === 成人内容标识 ===
         "成人", "色情", "黄色", "情色",
-        "做爱", "性交",
-        "口交", "肛交",
+        "做爱", "性交", "屄", "逼", "屌", "鸡巴",
+        "操", "干", "口交", "肛交",
 
         # === 体型特征 ===
         "巨乳", "大胸", "爆乳", "翘臀",
@@ -143,28 +143,42 @@ class MetatubeSource(_PluginBase):
         "空姐", "护士", "老师", "学生", "女仆",
         "少妇", "人妻", "熟女", "模特", "主播",
 
-        # === 视频特征 (移除画质通用词) ===
+        # === 视频特征 ===
         "无码", "有码", "内射", "颜射",
-        "中文字幕",
+        "高清", "超清", "蓝光", "中文字幕",
     ]
 
     # 其他核心关键词（通用特征）
-    # 优化: 移除单字关键字(屄,逼,屌,操,干)和画质/字幕等通用词汇
     BUILT_IN_OTHER_KEYWORDS = [
+        # === 画质 ===
+        "高清", "超清", "蓝光", "HD", "FHD",
+
         # === 编码类型 ===
-        "破解", "无修",
+        "无码", "有码", "破解", "无修",
+
+        # === 字幕 ===
+        "中文字幕", "字幕",
+
+        # === 音轨 ===
+        "原声", "国语", "粤语",
+
+        # === 版本 ===
+        "完整版", "无删减版", "流出", "泄露",
 
         # === 成人标识 ===
-        "AV", "成人视频", "A片",
+        "成人", "AV", "成人视频", "A片",
 
-        # === 版本特征 (移除可能误判的"完整版") ===
-        "无删减版", "流出", "泄露",
+        # === 生理特征 ===
+        "屄", "逼", "屌", "鸡巴",
+
+        # === 性行为 ===
+        "操", "干", "口交", "肛交",
     ]
 
     # 内置排除关键字（匹配后直接跳过分类）
     BUILT_IN_EXCLUDE_KEYWORDS = [
         # === 画质标记 ===
-        "UHD", "HDR", "HDR10", "HDR10+", "DOLBY", "DOLBY-VISION", "HDR-10",
+        "UHD", "HDR", "HDR10", "HDR10+", "DOLBY", "DOLBY-VISION","HDR-10"
         "FHD", "HD", "SD", "LD", "ED",
 
         # === 分辨率 ===
@@ -180,110 +194,65 @@ class MetatubeSource(_PluginBase):
         "MP3", "OPUS", "OGG", "WAV", "MKA",
         "TRUEHD", "DOLBY-ATMOS", "ATMOS",
         "EAC3", "DDP", "DD",
-        "LPCM", "PCM",
 
         # === 视频格式 ===
-        "REMUX", "WEB-DL", "WEBRIP", "WEB", "WEB-DL",
-        "BLURAY", "BLU-RAY", "BDRIP", "BRRIP", "BD", "DVD",
-        "DVDRIP", "HDDVD", "HDTV", "PDTV", "TVRIP",
-        "SATRIP", "CAM", "TS", "TC",
+        "REMUX", "WEB-DL", "WEBRIP", "WEB-DL", "WEB",
+        "BLURAY", "BDRIP", "BRRIP", "BD", "DVD",
+        "DVDRIP", "HDDVD", "HDTV", "PDTV",
+        "SATRIP", "TVRIP", "CAM", "TS", "TC",
         "TELESYNC", "TELECINE",
 
         # === 制式 ===
         "NTSC", "PAL", "SECAM", "SECA",
 
+
         # === 来源标记 ===
-        "NETFLIX", "DISNEY+", "HULU", "AMZN", "AMAZON",
+        "NETFLIX", "DISNEY+", "HULU", "AMZN",
         "HBO", "HBO-MAX", "PARAMOUNT+",
         "APPLE-TV", "APPLE+",
-        "PRIME", "CRUNCHYROLL", "FUNIMATION",
-        "BILIBILI", "YOUTUBE", "IQIYI", "TENCENT",
-        "YOUKU", "MANGO", "TV", "VLC", "MM",
-        "KYTICE", "MONUMENT", "FULLBRUTALITY", "FRDS",
-        "MTEAM", "MT", "CWAHD", "LAZERS", "LWRTD",
-        "PROPER", "REPACK", "INTERNAL", "LIMITED",
+        "PRIME", "AMAZON",
+        "CRUNCHYROLL", "FUNIMATION",
 
         # === 语言标记 ===
         "DUAL", "MULTI", "MULTISUBS",
-        "ENGLISH", "JAPANESE", "CHINESE", "CANTONESE", "MANDARIN",
-        "EN", "JP", "CN", "ZH", "ZH-CN", "ZH-TW",
+        "ENGLISH", "JAPANESE", "CHINESE",
+        "EN", "JP", "CN", "ZH",
         "ENG", "JPN", "CHN", "ZHO",
-        "GBR", "USA", "JPN", "CHN", "HKG", "KOR", "TWN",
 
         # === 版本标记 ===
         "DIRECTORS-CUT", "EXTENDED", "UNCUT",
         "UNCENSORED", "UNRATED",
-        "PROPER", "REPACK", "LIMITED", "INTERNAL",
-        "REMASTERED", "RESTORED", "THEATRICAL", "EXTENDED",
-        "SPECIAL", "COLLECTOR", "ULTIMATE", "DELUXE",
+        "REMASTERED", "REPACK", "PROPER",
+        "LIMITED", "INTERNAL", "NUKED",
 
-        # === 发行标记 ===
-        "COMPLETE", "SEASON", "EPISODE", "EP", "S",
-        "SCENE", "COMPILATION", "ANTHOLOGY",
-        "BOXSET", "COLLECTION", "SERIES", "SAGA",
+        # === 技术参数 ===
+        "10BIT", "8BIT", "HI10P", "HI8P",
+        "HYBRID", "COMPRESS", "RE-ENCODE",
 
-        # === 常见影视类型 ===
-        "ANIME", "DRAMA", "COMEDY", "ACTION", "THRILLER",
-        "HORROR", "ROMANCE", "DOCUMENTARY", "BIography",
-        "FANTASY", "SCI-FI", "ADVENTURE", "CRIME", "MYSTERY",
+        # === 其他常见标记 ===
+        "SAMPLE", "PROOF", "NFO", "SFV",
+        "SUBS", "SUBPACK", "SUBBED",
+        "DUBBED", "DUAL-AUDIO",
+        "COMPLETE", "FULL", "COMPLETE-SEASON",
+        "SEASON", "S01", "S02", "S03",
+        "EPISODE", "E01", "E02", "E03",
 
-        # === 中文剧集/电影常见词 ===
-        "修仙", "修真", "武侠", "仙侠", "玄幻",
-        "凡人", "仙逆", "遮天", "剑来", "永生", "一念永恒", "牧神记",
-        "师兄", "师弟", "师父", "师傅", "宗门", "门派",
-        "修炼", "渡劫", "飞升", "元婴", "金丹", "筑基",
-        "动漫", "动画", "剧场版", "TV版", "OVA", "OAD",
-        "剧集", "连续剧", "电视剧", "网剧",
+        # === 硬件相关 ===
+        "OLED", "LED", "LCD", "PLASMA",
+        "HDRIP", "SDR", "BT2020", "BT709",
 
-        # === 常见动漫/剧集标题 ===
-        "咒术回战", "七王国的骑士", "权力的游戏", "王国", "骑士",
+        # === 压缩标记 ===
+        "COMPRESSED", "ENCODED", "RE-ENC",
+        "CRRIP", "DVDR", "R5",
 
-        # === 中文常见标识 ===
-        "国语", "粤语", "中字", "中英", "双语",
-        "简体", "繁体", "字幕", "内嵌", "外挂",
-        "合集", "收藏", "珍藏", "纪念",
+        # === 质量标记 ===
+        "HQ", "LQ", "PDTV", "DSR",
+        "HDTVRIP", "HDTV",
+        "SATRIP", "TVRIP",
 
-        # === 英文常见标识 ===
-        "AKA", "ALSO", "KNOWN", "AS", "COMPLETE",
-        "PART", "PART1", "PART2", "PART3",
-        "VOL", "VOL1", "VOL2", "VOLUME",
-        "EDITION", "VERSION", "RELEASE",
-
-        # === 地区标识 ===
-        "USA", "UK", "GBR", "JPN", "CHN", "HKG", "KOR", "TWN",
-        "EUR", "ASIA", "WORLD", "GLOBAL", "INTERNATIONAL",
-
-        # === 发行组标识 ===
-        "FGT", "FYQ", "EZTV", "RARBG", "YIFY", "YTS",
-        "SPARKS", "FLUX", "GT", "QTS", "SMURF",
-
-        # === 特殊格式 ===
-        "3D", "2D", "VR", "MINIMAL", "NO-FRILLS",
-        "HYBRID", "RE-ENCODE", "RE-MUX", "REPACK",
-
-        # === 其他技术标记 ===
-        "HYBRID", "COMPRESS", "CRRIP", "DVDR",
-        "R5", "READNFO", "NFO", "SFV", "MD5",
-        "SAMPLE", "PROOF", "SUBS", "SUBPACK",
-        "DUBBED", "SUBBED", "SYNCED", "FIXED",
-
-        # === 编码器标识 ===
-        "XVID", "DIVX", "RMVB", "WMV", "AVI",
-        "MKV", "MP4", "MOV", "FLV", "TS", "M2TS",
-
-        # === 其他 ===
-        "RELEASE", "BLURAYDISC", "DISC", "DISC1", "DISC2",
-        "CD1", "CD2", "DVD1", "DVD2", "DVD5", "DVD9",
-        "PAL", "NTSC", "SECAM",
-
-        # === 档案组/发布组 ===
-        "CHD", "CHDTV", "CHDBITS", "HDChina", "TTG",
-        "HDSky", "MTeam", "CMCT", "FRDS", "ADWeb",
-        "UBWEB", "HDKWeb", "MONUMENT", "KYTiCE",
-
-        # === 文件质量标记 ===
-        "HQ", "LQ", "HIGH", "LOW", "BEST",
-        "GOOD", "BAD", "PROPER", "NUKE",
+        # === 分辨率简写 ===
+        "4K60", "1080P60", "720P60",
+        "4K60FPS", "1080P60FPS", "720P60FPS"
     ]
 
     # ==================== 命名模板预设 ====================
@@ -1662,20 +1631,13 @@ class MetatubeSource(_PluginBase):
         :param failure_reason: 失败原因
         :return: 处理后的 MediaInfo 或 None
         """
-        # 使用原始标题进行分类检测（修复：原异常流程错误使用 number）
-        subcategory = self._detect_category_type(title)
-
-        # 如果没有匹配到任何成人内容关键字，直接返回 None 让系统使用 IMDB/TMDB 识别
-        # 这防止了普通电视剧/动画被错误归类为"成人/其他"
-        if subcategory == self.SUBCATEGORY_OTHER:
-            logger.info(f"Metatube: {failure_reason}，未匹配成人内容关键字，交由系统处理: {title}")
-            return None
-
         # 未启用失败自动下载，直接返回 None
         if not self._failed_download_control:
             self._add_log(number, "", "failed", f"{failure_reason}，未启用失败自动下载", category="")
             return None
 
+        # 使用原始标题进行分类检测（修复：原异常流程错误使用 number）
+        subcategory = self._detect_category_type(title)
         category = self._build_category(subcategory)
 
         # 构建日志消息
@@ -1768,7 +1730,7 @@ class MetatubeSource(_PluginBase):
         检测标题匹配的关键字类型，返回二级分类名称（优先级: 自定义 > 内置核心 > keywords.json文件）
 
         :param title: 标题文本
-        :return: 二级分类名称：日系/欧美系/中文系/其他/__SKIP__（跳过识别）
+        :return: 二级分类名称：日系/欧美系/中文系/其他
         """
         if not title:
             return self.SUBCATEGORY_OTHER
@@ -1779,8 +1741,8 @@ class MetatubeSource(_PluginBase):
             search_title = title.upper() if not self._strict_match else title
             for exclude_kw in exclude_keywords:
                 if exclude_kw in search_title:
-                    logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过识别: {title}")
-                    return self.SUBCATEGORY_SKIP  # 返回特殊标记，表示应该跳过
+                    logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过分类: {title}")
+                    return self.SUBCATEGORY_OTHER
 
         # 标准化标题
         search_title = title
@@ -2874,11 +2836,6 @@ class MetatubeSource(_PluginBase):
         detected_category = self._detect_category_type(title)
         logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
 
-        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
-        if detected_category == self.SUBCATEGORY_SKIP:
-            logger.info(f"Metatube: 匹配到排除关键字，跳过识别，交由系统处理: {title}")
-            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
-
         # Step 3: 提取番号（根据分类使用不同规则）
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
@@ -2993,11 +2950,6 @@ class MetatubeSource(_PluginBase):
         # Step 2: 关键词分类检测（优先于番号提取）
         detected_category = self._detect_category_type(title)
         logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
-
-        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
-        if detected_category == self.SUBCATEGORY_SKIP:
-            logger.info(f"Metatube: 匹配到排除关键字，跳过异步识别，交由系统处理: {title}")
-            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
 
         # Step 3: 提取番号（根据分类使用不同规则）
         number = self._extract_number_from_meta(meta, detected_category)

@@ -1,3 +1,4 @@
+# Category: API客户端
 """
 Byte-Muse API 客户端
 通过 Byte-Muse 服务识别番号媒体信息
@@ -36,20 +37,29 @@ class ByteMuseApiClient:
     }
 
     def __init__(self, base_url: str = "http://10.0.0.1:3750",
+                 username: str = "", password: str = "",
                  api_token: str = "", timeout: int = 30,
                  proxies: Dict[str, str] = None):
         """
         初始化 Byte-Muse API 客户端
 
         :param base_url: API 基础地址
-        :param api_token: API Token (用于 Authorization Bearer)
+        :param username: 登录用户名
+        :param password: 登录密码
+        :param api_token: API Token (可直接提供，跳过登录)
         :param timeout: 请求超时时间(秒)
         :param proxies: 代理配置
         """
         self._base_url = base_url.rstrip('/')
+        self._username = username
+        self._password = password
         self._api_token = api_token
         self._timeout = timeout
         self._proxies = proxies
+
+        # 如果提供了用户名密码但没有 token，自动登录
+        if username and password and not api_token:
+            self._login()
 
     @property
     def base_url(self) -> str:
@@ -60,12 +70,88 @@ class ByteMuseApiClient:
         self._base_url = value.rstrip('/') if value else "http://127.0.0.1:3750"
 
     @property
+    def username(self) -> str:
+        return self._username
+
+    @username.setter
+    def username(self, value: str):
+        self._username = value or ""
+
+    @property
+    def password(self) -> str:
+        return self._password
+
+    @password.setter
+    def password(self, value: str):
+        self._password = value or ""
+
+    @property
     def api_token(self) -> str:
         return self._api_token
 
     @api_token.setter
     def api_token(self, value: str):
         self._api_token = value or ""
+
+    def _login(self) -> bool:
+        """
+        使用账号密码登录获取 Token
+
+        :return: 登录是否成功
+        """
+        if not self._username or not self._password:
+            logger.warning("Byte-Muse 登录失败: 未配置用户名或密码")
+            return False
+
+        try:
+            url = self._build_url("/api/v1/login")
+            params = {
+                "username": self._username,
+                "password": self._password,
+                "token_key": ""
+            }
+
+            response = RequestUtils(
+                timeout=self._timeout,
+                proxies=self._proxies,
+                headers=self.DEFAULT_HEADERS
+            ).get_res(url, params=params)
+
+            if response is None:
+                logger.warning(f"Byte-Muse 登录请求失败: {url}")
+                return False
+
+            if response.status_code != 200:
+                logger.warning(f"Byte-Muse 登录返回状态码: {response.status_code}")
+                return False
+
+            data = response.json()
+            if not data:
+                logger.warning("Byte-Muse 登录响应为空")
+                return False
+
+            # 解析响应
+            if isinstance(data, dict):
+                success = data.get("success", False)
+                if success and "data" in data:
+                    token = data["data"].get("token", "")
+                    if token:
+                        self._api_token = token
+                        logger.info(f"Byte-Muse 登录成功: {self._username}")
+                        return True
+                    else:
+                        logger.warning("Byte-Muse 登录响应中未找到 token")
+                        return False
+                else:
+                    message = data.get("message", "未知错误")
+                    logger.warning(f"Byte-Muse 登录失败: {message}")
+                    return False
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Byte-Muse 登录异常: {str(e)}")
+            return False
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头"""

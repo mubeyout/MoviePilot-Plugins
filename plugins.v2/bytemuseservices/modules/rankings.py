@@ -1,7 +1,7 @@
 """
 榜单模块
 提供 JavDB 热门榜和 JavLibrary 想要榜探索服务
-使用 ThePornDB API 作为数据源
+使用 ByteMuse API 作为数据源
 """
 from typing import List, Dict, Any
 from app.schemas import MediaInfo, DiscoverMediaSource
@@ -9,183 +9,143 @@ from app.core.config import settings
 from app.log import logger
 from cachetools import cached, TTLCache
 
-# ThePornDB API 客户端
-from ..theporndb_api import ThePornDBApiClient
+# ByteMuse API 客户端
+from ..bytemuse_api import ByteMuseApiClient
 
 # 全局配置
-_theporndb_api_token = "rlsxVnIRsrxAw4JH7UTIzLQQWQQKfcRpEpu4qehk0e4b96da"
+_bytemuse_base_url = "http://10.0.0.1:3750"
+_bytemuse_username = "mubey"
+_bytemuse_password = "355492"
 
 
 def get_api(master_plugin):
     """获取API列表"""
-    global _theporndb_api_token
-    _theporndb_api_token = master_plugin.theporndb_api_token
+    global _bytemuse_base_url, _bytemuse_username, _bytemuse_password
+    _bytemuse_base_url = master_plugin.bytemuse_base_url
+    _bytemuse_username = master_plugin.bytemuse_username
+    _bytemuse_password = master_plugin.bytemuse_password
     return [
         {
-            "path": "/bytemuse_rankings_javdb_daily",
-            "endpoint": rankings_javdb_daily,
+            "path": "/bytemuse_rankings",
+            "endpoint": rankings,
             "methods": ["GET"],
-            "summary": "ByteMuse JavDB 日榜",
-            "description": "获取 JavDB 日榜",
-        },
-        {
-            "path": "/bytemuse_rankings_javdb_weekly",
-            "endpoint": rankings_javdb_weekly,
-            "methods": ["GET"],
-            "summary": "ByteMuse JavDB 周榜",
-            "description": "获取 JavDB 周榜",
-        },
-        {
-            "path": "/bytemuse_rankings_javdb_monthly",
-            "endpoint": rankings_javdb_monthly,
-            "methods": ["GET"],
-            "summary": "ByteMuse JavDB 月榜",
-            "description": "获取 JavDB 月榜",
-        },
-        {
-            "path": "/bytemuse_rankings_javlibrary",
-            "endpoint": rankings_javlibrary,
-            "methods": ["GET"],
-            "summary": "ByteMuse JavLibrary 想要榜",
-            "description": "获取 JavLibrary 想要榜",
+            "summary": "ByteMuse 榜单",
+            "description": "榜单探索服务（JavDB日榜/周榜/月榜，JavLibrary想要榜）",
         },
     ]
 
 
-# JavDB 榜单番号（模拟榜单数据）
-_JAVDB_RANKINGS = {
-    "daily": [
-        "SSIS-800", "IPX-900", "MIDE-800", "PRED-600", "IPZZ-300",
-        "SSIS-801", "IPX-901", "MIDE-801", "PRED-601", "IPZZ-301",
-        "SSIS-802", "IPX-902", "MIDE-802", "PRED-602", "IPZZ-302",
-        "SSIS-803", "IPX-903", "MIDE-803", "PRED-603", "IPZZ-303",
-        "SSIS-804", "IPX-904", "MIDE-804", "PRED-604", "IPZZ-304",
-    ],
-    "weekly": [
-        "SSIS-750", "IPX-850", "MIDE-750", "PRED-550", "IPZZ-250",
-        "SSIS-751", "IPX-851", "MIDE-751", "PRED-551", "IPZZ-251",
-        "SSIS-752", "IPX-852", "MIDE-752", "PRED-552", "IPZZ-252",
-        "SSIS-753", "IPX-853", "MIDE-753", "PRED-553", "IPZZ-253",
-        "SSIS-754", "IPX-854", "MIDE-754", "PRED-554", "IPZZ-254",
-    ],
-    "monthly": [
-        "SSIS-700", "IPX-800", "MIDE-700", "PRED-500", "IPZZ-200",
-        "SSIS-701", "IPX-801", "MIDE-701", "PRED-501", "IPZZ-201",
-        "SSIS-702", "IPX-802", "MIDE-702", "PRED-502", "IPZZ-202",
-        "SSIS-703", "IPX-803", "MIDE-703", "PRED-503", "IPZZ-203",
-        "SSIS-704", "IPX-804", "MIDE-704", "PRED-504", "IPZZ-204",
-    ],
-}
-
-# JavLibrary 想要榜番号（模拟榜单数据）
-_JAVLIBRARY_RANKINGS = [
-    "SSIS-391", "SSIS-453", "SSIS-542",
-    "MIDV-001", "MIDV-100", "MIDV-200",
-    "PRED-200", "PRED-300", "PRED-400",
-    "IPX-292", "IPX-400", "IPX-500",
-    "JUL-100", "JUL-200", "JUL-300",
-    "STARS-100", "STARS-200", "STARS-300",
-    "WANZ-800", "WANZ-900", "WANZ-1000",
-    "ATID-400", "ATID-500", "ATID-600",
-    "HNDR-500", "HNDR-600", "HNDR-700",
-]
-
-
-def _jav_to_media(jav_data: Any, rank: int = None) -> MediaInfo:
+def rankings(
+    ranking_source: str = "javdb",
+    period: str = "daily",
+    page: int = 1,
+    count: int = 20,
+) -> List[MediaInfo]:
     """
-    将 ThePornDB JAV 数据转换为 MediaInfo
+    统一的榜单API端点
 
-    :param jav_data: ThePornDB JAV 场景或详情数据
-    :param rank: 排名（可选）
-    :return: MediaInfo 对象
-    """
-    # 处理不同类型的数据结构
-    if hasattr(jav_data, 'model_dump'):
-        data = jav_data.model_dump()
-    elif isinstance(jav_data, dict):
-        data = jav_data
-    else:
-        data = {}
-
-    # 提取标题
-    title = data.get("title", "")
-    external_id = data.get("external_id", "")
-
-    # 如果有排名，添加到标题
-    if rank:
-        title = f"#{rank} {external_id} {title}".strip()
-    elif external_id and external_id not in title:
-        title = f"{external_id} {title}".strip()
-
-    # 提取图片URL（优先使用 poster，然后 background）
-    poster_url = ""
-    if data.get("poster"):
-        poster_url = data.get("poster", "")
-    elif data.get("posters"):
-        posters = data.get("posters", {})
-        if isinstance(posters, dict):
-            poster_url = posters.get("full") or posters.get("large") or posters.get("medium") or ""
-    elif data.get("background"):
-        background = data.get("background", {})
-        if isinstance(background, dict):
-            poster_url = background.get("full") or background.get("large") or background.get("medium") or ""
-
-    # 如果有演员信息，添加到标题
-    performers = data.get("performers", [])
-    actor_names = []
-    if performers:
-        for p in performers:
-            if isinstance(p, dict):
-                name = p.get("name") or p.get("parent", {}).get("name") if p.get("parent") else ""
-                if name:
-                    actor_names.append(name)
-
-    return MediaInfo(
-        type="电影",
-        title=title,
-        mediaid_prefix="theporndb",
-        media_id=data.get("id") or data.get("uuid") or data.get("external_id", ""),
-        poster_path=poster_url,
-        vote_average=None,
-        year=data.get("date", "")[:4] if data.get("date") else None,
-        overview=data.get("description", ""),
-    )
-
-
-def _fetch_ranking_data(codes: List[str], page: int, count: int) -> List[MediaInfo]:
-    """
-    获取榜单数据
-
-    :param codes: 番号列表
+    :param ranking_source: 榜单来源 (javdb, javlibrary)
+    :param period: JavDB周期 (daily, weekly, monthly) - 仅当ranking_source为javdb时有效
     :param page: 页码
     :param count: 每页数量
     :return: 媒体信息列表
     """
-    client = ThePornDBApiClient(api_token=_theporndb_api_token)
-    results = []
+    # 根据ranking_source确定实际榜单类型
+    if ranking_source == "javlibrary":
+        return rankings_javlibrary(page=page, count=count)
+    elif ranking_source == "javdb":
+        # 根据period选择JavDB榜单类型
+        if period == "weekly":
+            return rankings_javdb_weekly(page=page, count=count)
+        elif period == "monthly":
+            return rankings_javdb_monthly(page=page, count=count)
+        else:  # daily
+            return rankings_javdb_daily(page=page, count=count)
+    else:
+        # 兼容旧的直接调用方式
+        if ranking_source == "javdb_weekly":
+            return rankings_javdb_weekly(page=page, count=count)
+        elif ranking_source == "javdb_monthly":
+            return rankings_javdb_monthly(page=page, count=count)
+        elif ranking_source == "javlibrary":
+            return rankings_javlibrary(page=page, count=count)
+        else:  # javdb_daily or default
+            return rankings_javdb_daily(page=page, count=count)
 
-    # 计算分页
-    start_idx = (page - 1) * count
-    end_idx = start_idx + count
-    paginated_codes = codes[start_idx:end_idx]
 
-    # 搜索每个番号
-    for i, code in enumerate(paginated_codes):
-        rank = start_idx + i + 1  # 计算排名
-        try:
-            jav_results = client.search_jav(code)
-            if jav_results:
-                for jav in jav_results:
-                    identifier = jav.slug if hasattr(jav, 'slug') and jav.slug else str(jav.id)
-                    detail = client.get_jav_detail(identifier)
-                    if detail:
-                        results.append(_jav_to_media(detail, rank=rank))
-                        break
-        except Exception as e:
-            logger.debug(f"获取榜单项 {code} 失败: {str(e)}")
-            continue
+def _item_to_media(item: Dict[str, Any], rank: int = None) -> MediaInfo:
+    """
+    将榜单项数据转换为 MediaInfo
 
-    return results
+    :param item: 榜单项数据
+    :param rank: 排名（可选）
+    :return: MediaInfo 对象
+    """
+    # 提取番号
+    code = item.get("code", "")
+    external_id = item.get("external_id", "") or code
+
+    # 标题只显示番号
+    title = external_id if external_id else "未知番号"
+
+    # 确保 media_id 永远不为空
+    media_id = external_id or code or item.get("id", "") or title or f"unknown_{id(item)}"
+
+    # 提取图片URL
+    poster_url = (item.get("poster", "") or
+                  item.get("cover", "") or
+                  item.get("image", "") or
+                  item.get("thumb", ""))
+
+    # 厂牌信息
+    studio = item.get("studio", "") or item.get("site", {}).get("name", "") if isinstance(item.get("site"), dict) else ""
+
+    return MediaInfo(
+        type="电影",
+        title=title,
+        mediaid_prefix="bytemuse_rank",
+        media_id=media_id,
+        imdb_id=f"bytemuse:{external_id}" if external_id else f"bytemuse:{media_id}",  # 用于订阅识别
+        poster_path=poster_url,
+        vote_average=item.get("score"),
+        year=item.get("date", "")[:4] if item.get("date") else None,
+        overview=item.get("description", "") or item.get("summary", ""),
+        studio=studio,
+    )
+
+
+def _fetch_ranking_data(rank_type: str, page: int, count: int) -> List[MediaInfo]:
+    """
+    获取榜单数据
+
+    :param rank_type: 榜单类型 (daily/weekly/monthly/javlibrary)
+    :param page: 页码
+    :param count: 每页数量
+    :return: 媒体信息列表
+    """
+    client = ByteMuseApiClient(
+        base_url=_bytemuse_base_url,
+        username=_bytemuse_username,
+        password=_bytemuse_password,
+    )
+
+    try:
+        # 使用 ByteMuse API 获取榜单
+        ranking_data = client.get_ranks(rank_type=rank_type, limit=count)
+
+        if ranking_data:
+            # 计算分页
+            start_idx = (page - 1) * count
+            end_idx = start_idx + count
+            paginated_data = ranking_data[start_idx:end_idx]
+
+            return [_item_to_media(item, rank=start_idx + i + 1) for i, item in enumerate(paginated_data)]
+
+        return []
+
+    except Exception as err:
+        logger.error(f"获取榜单失败: {str(err)}")
+        return []
 
 
 def rankings_javdb_daily(
@@ -200,7 +160,7 @@ def rankings_javdb_daily(
     :return: 媒体信息列表
     """
     try:
-        return _fetch_ranking_data(_JAVDB_RANKINGS["daily"], page, count)
+        return _fetch_ranking_data("daily", page, count)
     except Exception as err:
         logger.error(f"获取 JavDB 日榜失败: {str(err)}")
         return []
@@ -218,7 +178,7 @@ def rankings_javdb_weekly(
     :return: 媒体信息列表
     """
     try:
-        return _fetch_ranking_data(_JAVDB_RANKINGS["weekly"], page, count)
+        return _fetch_ranking_data("weekly", page, count)
     except Exception as err:
         logger.error(f"获取 JavDB 周榜失败: {str(err)}")
         return []
@@ -236,7 +196,7 @@ def rankings_javdb_monthly(
     :return: 媒体信息列表
     """
     try:
-        return _fetch_ranking_data(_JAVDB_RANKINGS["monthly"], page, count)
+        return _fetch_ranking_data("monthly", page, count)
     except Exception as err:
         logger.error(f"获取 JavDB 月榜失败: {str(err)}")
         return []
@@ -254,7 +214,7 @@ def rankings_javlibrary(
     :return: 媒体信息列表
     """
     try:
-        return _fetch_ranking_data(_JAVLIBRARY_RANKINGS, page, count)
+        return _fetch_ranking_data("javlibrary", page, count)
     except Exception as err:
         logger.error(f"获取 JavLibrary 想要榜失败: {str(err)}")
         return []
@@ -330,65 +290,20 @@ def rankings_filter_ui() -> List[dict]:
 
 def discover_source(master_plugin, event_data):
     """注册榜单探索源"""
-    javdb_daily_source = DiscoverMediaSource(
-        name="JavDB日榜",
-        mediaid_prefix="javdb_daily",
-        api_path=f"plugin/ByteMuseServices/bytemuse_rankings_javdb_daily?apikey={settings.API_TOKEN}",
+    rankings_source = DiscoverMediaSource(
+        name="榜单",
+        mediaid_prefix="bytemuse_rankings",
+        api_path=f"plugin/ByteMuseServices/bytemuse_rankings?apikey={settings.API_TOKEN}",
         filter_params={
+            "ranking_source": "javdb",
+            "period": "daily",
             "page": 1,
             "count": 20,
         },
         filter_ui=rankings_filter_ui(),
-        depends={},
-    )
-
-    javdb_weekly_source = DiscoverMediaSource(
-        name="JavDB周榜",
-        mediaid_prefix="javdb_weekly",
-        api_path=f"plugin/ByteMuseServices/bytemuse_rankings_javdb_weekly?apikey={settings.API_TOKEN}",
-        filter_params={
-            "page": 1,
-            "count": 20,
-        },
-        filter_ui=rankings_filter_ui(),
-        depends={},
-    )
-
-    javdb_monthly_source = DiscoverMediaSource(
-        name="JavDB月榜",
-        mediaid_prefix="javdb_monthly",
-        api_path=f"plugin/ByteMuseServices/bytemuse_rankings_javdb_monthly?apikey={settings.API_TOKEN}",
-        filter_params={
-            "page": 1,
-            "count": 20,
-        },
-        filter_ui=rankings_filter_ui(),
-        depends={},
-    )
-
-    javlibrary_source = DiscoverMediaSource(
-        name="JavLibrary想要榜",
-        mediaid_prefix="javlibrary",
-        api_path=f"plugin/ByteMuseServices/bytemuse_rankings_javlibrary?apikey={settings.API_TOKEN}",
-        filter_params={
-            "page": 1,
-            "count": 20,
-        },
-        filter_ui=rankings_filter_ui(),
-        depends={},
     )
 
     if not event_data.extra_sources:
-        event_data.extra_sources = [
-            javdb_daily_source,
-            javdb_weekly_source,
-            javdb_monthly_source,
-            javlibrary_source,
-        ]
+        event_data.extra_sources = [rankings_source]
     else:
-        event_data.extra_sources.extend([
-            javdb_daily_source,
-            javdb_weekly_source,
-            javdb_monthly_source,
-            javlibrary_source,
-        ])
+        event_data.extra_sources.append(rankings_source)

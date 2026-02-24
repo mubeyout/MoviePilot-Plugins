@@ -82,6 +82,66 @@ class ClashRuleProviderApi:
         data = self.services.get_status()
         return schemas.Response(success=True, data=data)
 
+    @apis.register(path="/health", methods=["GET"], auth="bear", summary="健康检查")
+    def health_check(self) -> schemas.Response:
+        """检查插件健康状态"""
+        health_info = {
+            "plugin_enabled": self.config.enabled,
+            "state_initialized": self.services.state is not None,
+            "scheduler_running": False,
+            "data_integrity": False,
+            "cache_status": "unknown"
+        }
+
+        try:
+            # 检查调度器状态
+            if hasattr(self.services, 'scheduler') and self.services.scheduler:
+                health_info["scheduler_running"] = self.services.scheduler.running
+
+            # 检查数据完整性
+            is_valid, error_msg = self.services.state.validate_state_data()
+            health_info["data_integrity"] = is_valid
+            if not is_valid:
+                health_info["data_error"] = error_msg
+
+            # 检查缓存状态
+            try:
+                from app.core.cache import Cache
+                cache = Cache(maxsize=1, ttl=60)
+                health_info["cache_status"] = "ok"
+            except Exception as e:
+                health_info["cache_status"] = f"error: {str(e)}"
+
+            # 检查关键数据
+            try:
+                health_info["subscriptions_count"] = len(self.config.subscriptions_config)
+                health_info["proxies_count"] = len(self.services.state.proxies)
+                health_info["proxy_groups_count"] = len(self.services.state.proxy_groups)
+                health_info["rules_count"] = len(self.services.state.top_rules_manager.rules) + \
+                                              len(self.services.state.ruleset_rules_manager.rules)
+            except Exception as e:
+                health_info["data_access_error"] = str(e)
+
+            health_info["overall_status"] = "healthy" if (
+                health_info["data_integrity"] and
+                health_info["cache_status"] == "ok"
+            ) else "unhealthy"
+
+        except Exception as e:
+            health_info["overall_status"] = "error"
+            health_info["error"] = str(e)
+
+        return schemas.Response(success=True, data=health_info)
+
+    @apis.register(path="/health/cache-clear", methods=["POST"], auth="bear", summary="清除缓存")
+    def clear_cache(self) -> schemas.Response:
+        """清除插件缓存"""
+        try:
+            self.services.state.clear_corrupted_cache()
+            return schemas.Response(success=True, message="缓存已清除")
+        except Exception as e:
+            return schemas.Response(success=False, message=f"清除缓存失败: {str(e)}")
+
     @apis.register(path="/rules/{ruleset}", methods=["GET"], auth="bear", summary="获取指定集合中的规则")
     def get_rules(self, ruleset: RuleSet) -> schemas.Response:
         data = self.services.get_rules(ruleset)

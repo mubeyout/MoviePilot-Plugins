@@ -1,7 +1,7 @@
 """
 厂牌模块
 提供厂牌作品探索服务
-使用 ThePornDB API 作为数据源
+使用 ByteMuse API 作为数据源
 """
 from typing import List, Dict, Any
 from app.schemas import MediaInfo, DiscoverMediaSource
@@ -9,162 +9,114 @@ from app.core.config import settings
 from app.log import logger
 from cachetools import cached, TTLCache
 
-# ThePornDB API 客户端
-from ..theporndb_api import ThePornDBApiClient
+# ByteMuse API 客户端
+from ..bytemuse_api import ByteMuseApiClient
 
 # 全局配置
-_theporndb_api_token = "rlsxVnIRsrxAw4JH7UTIzLQQWQQKfcRpEpu4qehk0e4b96da"
+_bytemuse_base_url = "http://10.0.0.1:3750"
+_bytemuse_username = "mubey"
+_bytemuse_password = "355492"
+
+
+# 厂牌名称映射
+_STUDIO_NAMES = {
+    "s1": "S1",
+    "ideapocket": "IdeaPocket",
+    "ip": "IdeaPocket",
+    "moodyz": "Moodyz",
+    "premium": "Premium",
+    "das": "DAS",
+    "madonna": "Madonna",
+    "honnaka": "Honnaka",
+    "attackers": "Attackers",
+    "wanz": "Wanz",
+}
 
 
 def get_api(master_plugin):
     """获取API列表"""
-    global _theporndb_api_token
-    _theporndb_api_token = master_plugin.theporndb_api_token
+    global _bytemuse_base_url, _bytemuse_username, _bytemuse_password
+    _bytemuse_base_url = master_plugin.bytemuse_base_url
+    _bytemuse_username = master_plugin.bytemuse_username
+    _bytemuse_password = master_plugin.bytemuse_password
     return [
         {
-            "path": "/bytemuse_studio_s1",
-            "endpoint": studio_s1,
+            "path": "/bytemuse_studios",
+            "endpoint": studios,
             "methods": ["GET"],
-            "summary": "ByteMuse S1 厂牌",
-            "description": "获取 S1 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_ideapocket",
-            "endpoint": studio_ideapocket,
-            "methods": ["GET"],
-            "summary": "ByteMuse IdeaPocket 厂牌",
-            "description": "获取 IdeaPocket 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_moodyz",
-            "endpoint": studio_moodyz,
-            "methods": ["GET"],
-            "summary": "ByteMuse Moodyz 厂牌",
-            "description": "获取 Moodyz 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_premium",
-            "endpoint": studio_premium,
-            "methods": ["GET"],
-            "summary": "ByteMuse Premium 厂牌",
-            "description": "获取 Premium 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_das",
-            "endpoint": studio_das,
-            "methods": ["GET"],
-            "summary": "ByteMuse DAS 厂牌",
-            "description": "获取 DAS 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_madonna",
-            "endpoint": studio_madonna,
-            "methods": ["GET"],
-            "summary": "ByteMuse Madonna 厂牌",
-            "description": "获取 Madonna 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_honnaka",
-            "endpoint": studio_honnaka,
-            "methods": ["GET"],
-            "summary": "ByteMuse Honnaka 厂牌",
-            "description": "获取 Honnaka 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_attackers",
-            "endpoint": studio_attackers,
-            "methods": ["GET"],
-            "summary": "ByteMuse Attackers 厂牌",
-            "description": "获取 Attackers 厂牌作品",
-        },
-        {
-            "path": "/bytemuse_studio_wanz",
-            "endpoint": studio_wanz,
-            "methods": ["GET"],
-            "summary": "ByteMuse Wanz 厂牌",
-            "description": "获取 Wanz 厂牌作品",
+            "summary": "ByteMuse 厂牌",
+            "description": "厂牌作品探索服务（9个厂牌）",
         },
     ]
 
 
-# 厂牌番号前缀映射
-_STUDIO_PREFIXES = {
-    "S1": ["SSIS", "IPX", "SOAV"],
-    "IdeaPocket": ["IPX", "IPZZ"],
-    "Moodyz": ["MIDE", "MIAB", "MIMK", "MIAA", "MIDV"],
-    "Premium": ["PRED", "PFES", "ABW"],
-    "DAS": ["DASS", "DAKJ"],
-    "Madonna": ["JUL", "JUQ"],
-    "Honnaka": ["HNDR", "HNDV", "HND"],
-    "Attackers": ["ATID", "SSNI", "SHKD"],
-    "Wanz": ["WANZ", "WAT"],
-}
-
-
-def _jav_to_media(jav_data: Any, studio: str = None) -> MediaInfo:
+def studios(
+    studio: str = "s1",
+    page: int = 1,
+    count: int = 20,
+) -> List[MediaInfo]:
     """
-    将 ThePornDB JAV 数据转换为 MediaInfo
+    统一的厂牌API端点
 
-    :param jav_data: ThePornDB JAV 场景或详情数据
-    :param studio: 厂牌名称（可选）
+    :param studio: 厂牌名称 (s1, ideapocket, moodyz, premium, das, madonna, honnaka, attackers, wanz)
+    :param page: 页码
+    :param count: 每页数量
+    :return: 媒体信息列表
+    """
+    # 厂牌名称映射到函数
+    studio_funcs = {
+        "s1": studio_s1,
+        "ideapocket": studio_ideapocket,
+        "moodyz": studio_moodyz,
+        "premium": studio_premium,
+        "das": studio_das,
+        "madonna": studio_madonna,
+        "honnaka": studio_honnaka,
+        "attackers": studio_attackers,
+        "wanz": studio_wanz,
+    }
+
+    func = studio_funcs.get(studio.lower(), studio_s1)
+    return func(page=page, count=count)
+
+
+def _item_to_media(item: Dict[str, Any], studio: str = None) -> MediaInfo:
+    """
+    将榜单项数据转换为 MediaInfo
+
+    :param item: 榜单项数据
+    :param studio: 厂牌名称
     :return: MediaInfo 对象
     """
-    # 处理不同类型的数据结构
-    if hasattr(jav_data, 'model_dump'):
-        data = jav_data.model_dump()
-    elif isinstance(jav_data, dict):
-        data = jav_data
-    else:
-        data = {}
+    # 提取番号
+    code = item.get("code", "")
+    external_id = item.get("external_id", "") or code
 
-    # 提取标题
-    title = data.get("title", "")
-    external_id = data.get("external_id", "")
+    # 标题只显示番号
+    title = external_id if external_id else "未知番号"
 
-    # 添加厂牌和番号到标题
-    if studio:
-        title = f"[{studio}] {external_id} {title}".strip()
-    elif external_id and external_id not in title:
-        title = f"{external_id} {title}".strip()
+    # 确保 media_id 永远不为空
+    media_id = external_id or code or item.get("id", "") or title or f"unknown_{id(item)}"
 
-    # 提取图片URL（优先使用 poster，然后 background）
-    poster_url = ""
-    if data.get("poster"):
-        poster_url = data.get("poster", "")
-    elif data.get("posters"):
-        posters = data.get("posters", {})
-        if isinstance(posters, dict):
-            poster_url = posters.get("full") or posters.get("large") or posters.get("medium") or ""
-    elif data.get("background"):
-        background = data.get("background", {})
-        if isinstance(background, dict):
-            poster_url = background.get("full") or background.get("large") or background.get("medium") or ""
+    # 提取图片URL
+    poster_url = (item.get("poster", "") or
+                  item.get("cover", "") or
+                  item.get("image", "") or
+                  item.get("thumb", ""))
 
-    # 如果有演员信息，添加到标题
-    performers = data.get("performers", [])
-    actor_names = []
-    if performers:
-        for p in performers:
-            if isinstance(p, dict):
-                name = p.get("name") or p.get("parent", {}).get("name") if p.get("parent") else ""
-                if name:
-                    actor_names.append(name)
-
-    # 提取厂牌信息
-    site = data.get("site", {})
-    studio_name = studio or ""
-    if isinstance(site, dict) and not studio_name:
-        studio_name = site.get("name", "")
+    # 厂牌名称
+    studio_name = _STUDIO_NAMES.get(studio.lower(), studio) if studio else ""
 
     return MediaInfo(
         type="电影",
         title=title,
-        mediaid_prefix="theporndb",
-        media_id=data.get("id") or data.get("uuid") or data.get("external_id", ""),
+        mediaid_prefix="bytemuse_studio",
+        media_id=media_id,
+        imdb_id=f"bytemuse:{external_id}" if external_id else f"bytemuse:{media_id}",  # 用于订阅识别
         poster_path=poster_url,
-        vote_average=None,
-        year=data.get("date", "")[:4] if data.get("date") else None,
-        overview=data.get("description", ""),
+        vote_average=item.get("score"),
+        year=item.get("date", "")[:4] if item.get("date") else None,
+        overview=item.get("description", "") or item.get("summary", ""),
         studio=studio_name,
     )
 
@@ -178,53 +130,26 @@ def _fetch_studio_works(studio: str, page: int, count: int) -> List[MediaInfo]:
     :param count: 每页数量
     :return: 媒体信息列表
     """
-    client = ThePornDBApiClient(api_token=_theporndb_api_token)
-    results = []
-
-    # 获取该厂牌的番号前缀
-    prefixes = _STUDIO_PREFIXES.get(studio, [])
-
-    if not prefixes:
-        logger.warning(f"未找到厂牌 {studio} 的番号前缀配置")
-        return []
+    client = ByteMuseApiClient(
+        base_url=_bytemuse_base_url,
+        username=_bytemuse_username,
+        password=_bytemuse_password,
+    )
 
     try:
-        # 计算分页
-        start_idx = (page - 1) * count
-        end_idx = start_idx + count
+        # 使用 ByteMuse API 获取厂牌榜单
+        studio_data = client.get_studio_ranks(studio=studio, limit=count)
 
-        # 生成番号进行搜索
-        searched = 0
-        for prefix in prefixes:
-            if searched >= end_idx:
-                break
+        if studio_data:
+            # 计算分页
+            start_idx = (page - 1) * count
+            end_idx = start_idx + count
+            paginated_data = studio_data[start_idx:end_idx]
 
-            # 生成该前缀的番号范围
-            base_offset = (page - 1) * 10
-            for offset in range(base_offset, base_offset + 20):
-                if searched >= end_idx:
-                    break
+            studio_name = _STUDIO_NAMES.get(studio.lower(), studio)
+            return [_item_to_media(item, studio=studio_name) for item in paginated_data]
 
-                # 生成番号
-                code = f"{prefix}-{offset:03d}"
-
-                try:
-                    jav_results = client.search_jav(code)
-                    if jav_results:
-                        for jav in jav_results:
-                            if searched >= end_idx:
-                                break
-                            if searched >= start_idx:
-                                identifier = jav.slug if hasattr(jav, 'slug') and jav.slug else str(jav.id)
-                                detail = client.get_jav_detail(identifier)
-                                if detail:
-                                    results.append(_jav_to_media(detail, studio=studio))
-                            searched += 1
-                except Exception as e:
-                    logger.debug(f"搜索番号 {code} 失败: {str(e)}")
-                    continue
-
-        return results
+        return []
 
     except Exception as err:
         logger.error(f"获取厂牌 {studio} 作品失败: {str(err)}")
@@ -236,7 +161,7 @@ def studio_s1(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 S1 厂牌作品"""
-    return _fetch_studio_works("S1", page, count)
+    return _fetch_studio_works("s1", page, count)
 
 
 def studio_ideapocket(
@@ -244,7 +169,7 @@ def studio_ideapocket(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 IdeaPocket 厂牌作品"""
-    return _fetch_studio_works("IdeaPocket", page, count)
+    return _fetch_studio_works("ideapocket", page, count)
 
 
 def studio_moodyz(
@@ -252,7 +177,7 @@ def studio_moodyz(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Moodyz 厂牌作品"""
-    return _fetch_studio_works("Moodyz", page, count)
+    return _fetch_studio_works("moodyz", page, count)
 
 
 def studio_premium(
@@ -260,7 +185,7 @@ def studio_premium(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Premium 厂牌作品"""
-    return _fetch_studio_works("Premium", page, count)
+    return _fetch_studio_works("premium", page, count)
 
 
 def studio_das(
@@ -268,7 +193,7 @@ def studio_das(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 DAS 厂牌作品"""
-    return _fetch_studio_works("DAS", page, count)
+    return _fetch_studio_works("das", page, count)
 
 
 def studio_madonna(
@@ -276,7 +201,7 @@ def studio_madonna(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Madonna 厂牌作品"""
-    return _fetch_studio_works("Madonna", page, count)
+    return _fetch_studio_works("madonna", page, count)
 
 
 def studio_honnaka(
@@ -284,7 +209,7 @@ def studio_honnaka(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Honnaka 厂牌作品"""
-    return _fetch_studio_works("Honnaka", page, count)
+    return _fetch_studio_works("honnaka", page, count)
 
 
 def studio_attackers(
@@ -292,7 +217,7 @@ def studio_attackers(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Attackers 厂牌作品"""
-    return _fetch_studio_works("Attackers", page, count)
+    return _fetch_studio_works("attackers", page, count)
 
 
 def studio_wanz(
@@ -300,7 +225,7 @@ def studio_wanz(
     count: int = 20,
 ) -> List[MediaInfo]:
     """获取 Wanz 厂牌作品"""
-    return _fetch_studio_works("Wanz", page, count)
+    return _fetch_studio_works("wanz", page, count)
 
 
 def studios_filter_ui() -> List[dict]:
@@ -338,35 +263,19 @@ def studios_filter_ui() -> List[dict]:
 
 def discover_source(master_plugin, event_data):
     """注册厂牌探索源"""
-    # 为每个厂牌创建独立的探索源
-    studios_list = [
-        ("s1", "S1"),
-        ("ideapocket", "IdeaPocket"),
-        ("moodyz", "Moodyz"),
-        ("premium", "Premium"),
-        ("das", "DAS"),
-        ("madonna", "Madonna"),
-        ("honnaka", "Honnaka"),
-        ("attackers", "Attackers"),
-        ("wanz", "Wanz"),
-    ]
-
-    sources = []
-    for studio_key, studio_name in studios_list:
-        source = DiscoverMediaSource(
-            name=f"ByteMuse-{studio_name}",
-            mediaid_prefix=f"theporndb_{studio_key}",
-            api_path=f"plugin/ByteMuseServices/bytemuse_studio_{studio_key}?apikey={settings.API_TOKEN}",
-            filter_params={
-                "page": 1,
-                "count": 20,
-            },
-            filter_ui=studios_filter_ui(),
-            depends={},
-        )
-        sources.append(source)
+    studios_source = DiscoverMediaSource(
+        name="厂牌",
+        mediaid_prefix="bytemuse_studios",
+        api_path=f"plugin/ByteMuseServices/bytemuse_studios?apikey={settings.API_TOKEN}",
+        filter_params={
+            "studio": "s1",
+            "page": 1,
+            "count": 20,
+        },
+        filter_ui=studios_filter_ui(),
+    )
 
     if not event_data.extra_sources:
-        event_data.extra_sources = sources
+        event_data.extra_sources = [studios_source]
     else:
-        event_data.extra_sources.extend(sources)
+        event_data.extra_sources.append(studios_source)

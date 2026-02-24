@@ -71,5 +71,44 @@
         "history": {
             "v1.0.0": "初始版本，整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
         }
+    },
+    "emptyfoldercleaner": {
+        "name": "空文件夹清理",
+        "description": "智能删除符合自定义规则的空文件夹（非完全空），支持两种判定模式：按类型+大小判定（默认）、仅按大小判定。支持多路径监控、递归遍历、自定义文件类型和大小阈值（支持B/KB/MB/GB单位），从最深层开始安全删除。",
+        "labels": "工具,清理",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/main/icons/delete.png",
+        "author": "rex.ruan",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v2.0.0": "初始版本V2：支持两种判定模式切换（按类型+大小判定、仅按大小判定），支持B/KB/MB/GB单位，支持多路径递归遍历，从最深层安全删除，完善配置界面和日志输出"
+        }
+    },
+    "smartfoldercleaner": {
+        "name": "智能文件夹清理",
+        "description": "遍历指定目录，删除符合自定义'空文件夹'定义的目录（无有效文件的目录）。支持按类型+大小判定和仅按大小判定两种模式，支持自定义运行周期和立即运行功能，从最深层安全删除。",
+        "labels": "工具,清理",
+        "version": "1.0",
+        "icon": "delete.png",
+        "author": "mubey",
+        "level": 2,
+        "v2": true,
+        "history": {
+            "v1.0": "初始版本：支持智能文件夹清理，两种判定模式，自定义运行周期，紧凑配置界面，立即运行功能"
+        }
+    },
+    "bytemuseservices": {
+        "name": "番号探索服务聚合",
+        "description": "基于 ByteMuse API 的探索数据源插件，提供演员、上新、推荐、榜单、厂牌、搜索等探索服务。整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源。",
+        "labels": "探索,识别",
+        "version": "2.9.6",
+        "icon": "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png",
+        "author": "Mubey",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v2.9.6": "当前版本：整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
+        }
     }
 }

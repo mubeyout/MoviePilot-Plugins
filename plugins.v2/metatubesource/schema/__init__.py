@@ -1,3 +1,4 @@
+# Category: 数据结构
 from typing import Optional, List, Union
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime

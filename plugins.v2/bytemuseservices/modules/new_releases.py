@@ -1,7 +1,7 @@
 """
 上新模块
 提供最新上架作品探索服务
-使用 ThePornDB API 作为数据源
+使用 ByteMuse API 作为数据源
 """
 from typing import List, Dict, Any
 from app.schemas import MediaInfo, DiscoverMediaSource
@@ -10,17 +10,22 @@ from app.log import logger
 from cachetools import cached, TTLCache
 from datetime import datetime, timedelta
 
-# ThePornDB API 客户端
-from ..theporndb_api import ThePornDBApiClient
+# ByteMuse API 客户端
+from ..bytemuse_api import ByteMuseApiClient
+from ..schema import ByteMuseMovie
 
 # 全局配置
-_theporndb_api_token = "rlsxVnIRsrxAw4JH7UTIzLQQWQQKfcRpEpu4qehk0e4b96da"
+_bytemuse_base_url = "http://10.0.0.1:3750"
+_bytemuse_username = "mubey"
+_bytemuse_password = "355492"
 
 
 def get_api(master_plugin):
     """获取API列表"""
-    global _theporndb_api_token
-    _theporndb_api_token = master_plugin.theporndb_api_token
+    global _bytemuse_base_url, _bytemuse_username, _bytemuse_password
+    _bytemuse_base_url = master_plugin.bytemuse_base_url
+    _bytemuse_username = master_plugin.bytemuse_username
+    _bytemuse_password = master_plugin.bytemuse_password
     return [
         {
             "path": "/bytemuse_new_releases",
@@ -32,92 +37,35 @@ def get_api(master_plugin):
     ]
 
 
-# 热门厂牌的最新番号（模拟"最新上架"数据）
-# ThePornDB API 没有直接的上新接口，我们通过搜索最近的热门番号来实现
-_RECENT_PATTERNS = [
-    # S1 最新
-    "SSIS", "IPX", "OFKU",
-    # IdeaPocket 最新
-    "IPX-", "IPZZ-",
-    # Moodyz 最新
-    "MIDE", "MIAB", "MIMK",
-    # Premium 最新
-    "PRED", "PFES",
-    # DAS 最新
-    "DASS", "DAKJ",
-    # Madonna 最新
-    "JUL", "JUQ",
-    # Honnaka 最新
-    "HNDR", "HNDV",
-    # Attackers 最新
-    "ATID", "SSNI",
-    # Wanz 最新
-    "WANZ",
-]
-
-
-def _jav_to_media(jav_data: Any) -> MediaInfo:
+def _movie_to_media(movie: ByteMuseMovie) -> MediaInfo:
     """
-    将 ThePornDB JAV 数据转换为 MediaInfo
+    将 ByteMuseMovie 转换为 MediaInfo
 
-    :param jav_data: ThePornDB JAV 场景或详情数据
+    :param movie: ByteMuseMovie 对象
     :return: MediaInfo 对象
     """
-    # 处理不同类型的数据结构
-    if hasattr(jav_data, 'model_dump'):
-        data = jav_data.model_dump()
-    elif isinstance(jav_data, dict):
-        data = jav_data
+    # 处理标题 - 只显示番号
+    title = movie.code or movie.title or ""
+
+    # 确保 media_id 永远不为空
+    if movie.code:
+        media_id = movie.code
+    elif movie.id:
+        media_id = f"bytemuse_{movie.id}"
     else:
-        data = {}
-
-    # 提取标题
-    title = data.get("title", "")
-    external_id = data.get("external_id", "")
-    if external_id and external_id not in title:
-        title = f"{external_id} {title}".strip()
-
-    # 提取图片URL（优先使用 poster，然后 background）
-    poster_url = ""
-    if data.get("poster"):
-        poster_url = data.get("poster", "")
-    elif data.get("posters"):
-        posters = data.get("posters", {})
-        if isinstance(posters, dict):
-            poster_url = posters.get("full") or posters.get("large") or posters.get("medium") or ""
-    elif data.get("background"):
-        background = data.get("background", {})
-        if isinstance(background, dict):
-            poster_url = background.get("full") or background.get("large") or background.get("medium") or ""
-
-    # 如果有演员信息，添加到标题
-    performers = data.get("performers", [])
-    actor_names = []
-    if performers:
-        for p in performers:
-            if isinstance(p, dict):
-                name = p.get("name") or p.get("parent", {}).get("name") if p.get("parent") else ""
-                if name:
-                    actor_names.append(name)
-        if actor_names:
-            title = f"{title} ({', '.join(actor_names[:3])})"
-
-    # 提取厂牌信息
-    site = data.get("site", {})
-    studio_name = ""
-    if isinstance(site, dict):
-        studio_name = site.get("name", "")
+        media_id = title or f"unknown_{id(movie)}"
 
     return MediaInfo(
         type="电影",
         title=title,
-        mediaid_prefix="theporndb",
-        media_id=data.get("id") or data.get("uuid") or data.get("external_id", ""),
-        poster_path=poster_url,
-        vote_average=None,
-        year=data.get("date", "")[:4] if data.get("date") else None,
-        overview=data.get("description", ""),
-        studio=studio_name,
+        mediaid_prefix="bytemuse",
+        media_id=media_id,
+        imdb_id=f"bytemuse:{movie.code}" if movie.code else f"bytemuse:{media_id}",  # 用于订阅识别
+        poster_path=movie.poster_url or movie.cover_url or movie.thumb_url or "",
+        vote_average=movie.score,
+        year=movie.release_date[:4] if movie.release_date else None,
+        overview=movie.summary or "",
+        studio=movie.studio or movie.publisher or "",
     )
 
 
@@ -130,79 +78,39 @@ def new_releases(
     """
     获取最新上架作品
 
-    :param days: 天数（1/3/7/30）- 用于生成搜索模式
-    :param studio: 厂牌筛选（可选）
+    :param days: 天数（暂未使用，API 默认返回今日上新）
+    :param studio: 厂牌筛选（暂未使用）
     :param page: 页码
     :param count: 每页数量
     :return: 媒体信息列表
     """
-    client = ThePornDBApiClient(api_token=_theporndb_api_token)
-
-    # 厂牌到番号前缀的映射
-    studio_prefixes = {
-        "S1": ["SSIS", "IPX", "SOAV"],
-        "IdeaPocket": ["IPX", "IPZZ"],
-        "Moodyz": ["MIDE", "MIAB", "MIMK", "MIAA"],
-        "Premium": ["PRED", "PFES", "ABW"],
-        "DAS": ["DASS", "DAKJ"],
-        "Madonna": ["JUL", "JUQ"],
-        "Honnaka": ["HNDR", "HNDV", "HND"],
-        "Attackers": ["ATID", "SSNI", "SHKD"],
-        "Wanz": ["WANZ", "WAT"],
-    }
+    client = ByteMuseApiClient(
+        base_url=_bytemuse_base_url,
+        username=_bytemuse_username,
+        password=_bytemuse_password,
+    )
 
     try:
-        results = []
+        # 使用 ByteMuse API 获取今日上新
+        logger.debug(f"获取今日上新: page={page}, count={count}")
+        movies = client.get_release_today(page=page, page_size=count)
 
-        # 确定要搜索的番号前缀
-        if studio and studio in studio_prefixes:
-            prefixes = studio_prefixes[studio]
-        else:
-            # 使用所有前缀
-            prefixes = []
-            for studio_prefixes_list in studio_prefixes.values():
-                prefixes.extend(studio_prefixes_list)
+        logger.debug(f"API返回: movies={movies}, type={type(movies) if movies else 'None'}")
 
-        # 根据页码计算起始索引
-        start_idx = (page - 1) * count
-        end_idx = start_idx + count
+        if movies:
+            logger.debug(f"开始转换 {len(movies)} 部电影数据")
+            result = []
+            for i, movie in enumerate(movies):
+                try:
+                    media = _movie_to_media(movie)
+                    logger.debug(f"电影 {i+1}: code={movie.code}, title={movie.title[:20] if movie.title else 'N/A'}..., media_id={media.media_id}")
+                    result.append(media)
+                except Exception as e:
+                    logger.error(f"转换电影 {i+1} 失败: {str(e)}, movie={movie}")
+            return result
 
-        # 搜索每个前缀的最新番号
-        searched = 0
-        for i, prefix in enumerate(prefixes):
-            if searched >= end_idx:
-                break
-
-            # 生成几个番号来搜索（模拟最新上架）
-            # 使用较新的番号范围
-            base_offset = (page - 1) * 5 + i * 2
-            search_patterns = [
-                f"{prefix}-{500 + base_offset:03d}",
-                f"{prefix}-{600 + base_offset:03d}",
-                f"{prefix}-{700 + base_offset:03d}",
-            ]
-
-            for pattern in search_patterns:
-                if searched >= end_idx:
-                    break
-
-                jav_results = client.search_jav(pattern)
-                if jav_results:
-                    for jav in jav_results:
-                        if searched >= end_idx:
-                            break
-                        if searched >= start_idx:
-                            identifier = jav.slug if hasattr(jav, 'slug') and jav.slug else str(jav.id)
-                            detail = client.get_jav_detail(identifier)
-                            if detail:
-                                results.append(_jav_to_media(detail))
-                        searched += 1
-
-                # 添加延迟避免请求过快
-                import time
-                time.sleep(0.1)
-
-        return results
+        logger.warning(f"未获取到今日上新: movies is {movies}")
+        return []
 
     except Exception as err:
         logger.error(f"获取最新上架作品失败: {str(err)}")
@@ -275,8 +183,8 @@ def new_releases_filter_ui() -> List[dict]:
 def discover_source(master_plugin, event_data):
     """注册上新探索源"""
     new_releases_source = DiscoverMediaSource(
-        name="ByteMuse上新",
-        mediaid_prefix="theporndb_new",
+        name="上新",
+        mediaid_prefix="bytemuse_new",
         api_path=f"plugin/ByteMuseServices/bytemuse_new_releases?apikey={settings.API_TOKEN}",
         filter_params={
             "days": 7,

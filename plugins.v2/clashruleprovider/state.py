@@ -43,6 +43,35 @@ class PluginState:
         # Runtime variables (not persisted directly or persisted via config)
         self.clash_template: ClashConfig = ClashConfig()
 
+    def validate_state_data(self) -> tuple[bool, str]:
+        """
+        验证状态数据的完整性
+        返回: (是否有效, 错误信息)
+        """
+        try:
+            # 测试访问关键数据
+            _ = self.subscription_info
+            _ = self.sub_configs
+            _ = self.proxies
+            _ = self.proxy_groups
+            _ = self.rule_providers
+            return True, ""
+        except Exception as e:
+            from app.log import logger
+            error_msg = f"State data validation failed: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+
+    def clear_corrupted_cache(self):
+        """清除可能损坏的缓存"""
+        try:
+            self.cache.clear(region=self.cache_region)
+            from app.log import logger
+            logger.info(f"Cleared cache for region: {self.cache_region}")
+        except Exception as e:
+            from app.log import logger
+            logger.error(f"Failed to clear cache: {e}")
+
     def _get_val(self, key: str) -> Any:
         # Check cache
         if self.cache.exists(key, region=self.cache_region):
@@ -59,7 +88,24 @@ class PluginState:
             return None
 
         if adapter:
-            val = adapter.validate_python(data)
+            try:
+                val = adapter.validate_python(data)
+            except Exception as e:
+                # 数据验证失败,记录错误并返回默认值
+                from app.log import logger
+                logger.error(f"Failed to validate {key} from database: {e}")
+                logger.error(f"Data: {str(data)[:500]}...")
+                if default_factory:
+                    val = default_factory()
+                    # 保存修复后的默认值
+                    try:
+                        self.plugin_data.save(self.plugin_id, key,
+                                              adapter.dump_python(val, mode="json", by_alias=True, exclude_none=True))
+                    except Exception as save_err:
+                        logger.error(f"Failed to save default value for {key}: {save_err}")
+                    self.cache.set(key, val, region=self.cache_region)
+                    return val
+                return None
         else:
             val = data
 
@@ -69,10 +115,21 @@ class PluginState:
     def _set_val(self, key: str, value: Any):
         adapter, _ = self._schemas.get(key, (None, None))
         if adapter:
-            data = adapter.dump_python(value, mode="json", by_alias=True, exclude_none=True)
+            try:
+                data = adapter.dump_python(value, mode="json", by_alias=True, exclude_none=True)
+            except Exception as e:
+                from app.log import logger
+                logger.error(f"Failed to serialize {key} for saving: {e}")
+                # 序列化失败,不保存数据但更新缓存
+                self.cache.set(key, value, region=self.cache_region)
+                return
         else:
             data = value
-        self.plugin_data.save(self.plugin_id, key, data)
+        try:
+            self.plugin_data.save(self.plugin_id, key, data)
+        except Exception as e:
+            from app.log import logger
+            logger.error(f"Failed to save {key} to database: {e}")
         self.cache.set(key, value, region=self.cache_region)
 
     @property

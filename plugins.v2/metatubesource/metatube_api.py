@@ -1,3 +1,4 @@
+# Category: API客户端
 """
 Metatube API 客户端
 """
@@ -21,21 +22,25 @@ class MetatubeApiClient:
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
 
-    # 番号正则表达式列表
+    # 番号正则表达式列表（按优先级排序，更具体的规则在前）
     NUMBER_PATTERNS = [
+        # ===== FC2 系列（最高优先级，防止被通用规则误匹配）=====
+        # FC2格式: FC2-PPV-1234567, FC2-1234567, FC2PPV-1234567
+        r'(FC2)[-_]?(PPV)?[-_]?(\d{5,7})',
+
+        # ===== HEYZO 系列 =====
+        # HEYZO格式: HEYZO-1234
+        r'(HEYZO)[-_]?(\d{4})',
+
+        # ===== Tokyo Hot 系列 =====
+        # Tokyo Hot: n1234, k1234, k12345, K1234, KD1234
+        r'([nNK]|K|KD)[-_]?(\d{4,5})',
+
         # ===== 主流标准格式 =====
         # 标准格式: ABC-123, ABC123, ABC-0123
         r'([A-Z]{2,10})[-_]?(\d{2,5})',
 
-        # ===== FC2 系列 =====
-        # FC2格式: FC2-PPV-1234567, FC2-1234567, FC21234567
-        r'(FC2)[-_]?(PPV)?[-_]?(\d{5,7})',
-
         # ===== 素人/单体系列 =====
-        # HEYZO格式: HEYZO-1234
-        r'(HEYZO)[-_]?(\d{4})',
-        # Tokyo Hot: n1234, k1234, k12345, K1234, KD1234
-        r'([nNK]|K|KD)[-_]?(\d{4,5})',
         # 10musume: 10musume-1234, 10mu-123
         r'(10MUSUME|10MU)[-_]?(\d{2,4})',
         # PacoPaco: paco-123, pacopaco-1234

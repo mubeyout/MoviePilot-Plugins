@@ -255,18 +255,18 @@ class ANiStrm(_PluginBase):
             year, month = map(int, season_str.split('-'))
 
             # 查找该番剧是否已有记录
-        existing_seasons = [k for k in self._anime_season_cache.keys() if k.split('_')[0] == anime_name]
+            existing_seasons = [k for k in self._anime_season_cache.keys() if k.split('_')[0] == anime_name]
 
-        if not existing_seasons:
-            # 第一次出现，默认为第1季
-            season_num = 1
-        else:
-            # 按季度排序，取最大的季度号+1
-            season_nums = [self._anime_season_cache[k] for k in existing_seasons]
-            season_num = max(season_nums) + 1
+            if not existing_seasons:
+                # 第一次出现，默认为第1季
+                season_num = 1
+            else:
+                # 按季度排序，取最大的季度号+1
+                season_nums = [self._anime_season_cache[k] for k in existing_seasons]
+                season_num = max(season_nums) + 1
 
-        self._anime_season_cache[cache_key] = season_num
-        return season_num
+            self._anime_season_cache[cache_key] = season_num
+            return season_num
 
         except Exception:
             logger.debug(f"无法解析季度 {season_str}，默认为第1季")

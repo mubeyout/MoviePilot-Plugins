@@ -38,7 +38,7 @@ class ClashRuleProvider(_PluginBase):
     # 插件版本
     plugin_version = "2.1.2"
     # 插件作者
-    plugin_author = "wumode"
+    plugin_author = "wumode,mubey"
     # 作者主页
     author_url = "https://github.com/wumode"
     # 插件配置项ID前缀
@@ -77,7 +77,21 @@ class ClashRuleProvider(_PluginBase):
         self._update_config()
 
         if self.state.config.enabled:
-            self._initialize_plugin()
+            try:
+                self._initialize_plugin()
+            except Exception as e:
+                logger.error(f"插件初始化失败: {e}")
+                logger.error("尝试清除缓存并重新初始化...")
+                self.state.clear_corrupted_cache()
+                try:
+                    self._initialize_plugin()
+                    logger.info("插件重新初始化成功")
+                except Exception as retry_err:
+                    logger.error(f"插件重新初始化也失败: {retry_err}")
+                    # 禁用插件以防止持续错误
+                    self.state.config.enabled = False
+                    self._update_config()
+                    logger.warning("由于初始化失败,插件已自动禁用")
 
     def upgrade_data(self):
         data_version = self.get_data(DataKey.DATA_VERSION) or "2.0.10"
@@ -88,6 +102,13 @@ class ClashRuleProvider(_PluginBase):
     def _initialize_plugin(self):
         self.state.top_rules_manager.clear()
         self.state.ruleset_rules_manager.clear()
+
+        # 先验证状态数据的完整性
+        is_valid, error_msg = self.state.validate_state_data()
+        if not is_valid:
+            logger.warning(f"状态数据验证失败: {error_msg}")
+            logger.info("清除缓存并使用默认值...")
+            self.state.clear_corrupted_cache()
 
         self.scheduler = AsyncIOScheduler(timezone=settings.TZ, event_loop=global_vars.loop)
         self.services = ClashRuleProviderService(self.__class__.__name__, self.state, self.scheduler)
@@ -109,22 +130,45 @@ class ClashRuleProvider(_PluginBase):
                 logger.error(f"  错误 {i+1}: [{loc}] {error['msg']}")
             if ve.error_count() > 5:
                 logger.error(f"  ... 还有 {ve.error_count() - 5} 个错误")
+            # 模板验证失败,使用空模板
+            self.state.clash_template = ClashConfig()
         except Exception as ve:
             logger.error(f"Error validating clash template config: {ve}")
+            self.state.clash_template = ClashConfig()
 
-        self.services.load_rules()
+        try:
+            self.services.load_rules()
+        except Exception as e:
+            logger.error(f"加载规则失败: {e}")
+            # 清空规则管理器
+            self.state.top_rules_manager.clear()
+            self.state.ruleset_rules_manager.clear()
 
         # Accessing subscription_info property triggers load from DB.
-        sub_info_map = self.state.subscription_info
-        sub_info_map.update(self.state.config.sub_links)
-        self.state.subscription_info = sub_info_map
+        try:
+            sub_info_map = self.state.subscription_info
+            sub_info_map.update(self.state.config.sub_links)
+            self.state.subscription_info = sub_info_map
+        except Exception as e:
+            logger.error(f"初始化订阅信息失败: {e}")
+            # 使用新的订阅信息
+            from .models.api import SubscriptionsInfo
+            self.state.subscription_info = SubscriptionsInfo()
 
         # sub_configs loaded from DB. Filter by current sub_links.
-        sub_configs_map = self.state.sub_configs
-        sub_configs_map = {url: sub_configs_map[url] for url in self.state.config.sub_links if sub_configs_map.get(url)}
-        self.state.sub_configs = sub_configs_map
+        try:
+            sub_configs_map = self.state.sub_configs
+            sub_configs_map = {url: sub_configs_map[url] for url in self.state.config.sub_links if sub_configs_map.get(url)}
+            self.state.sub_configs = sub_configs_map
+        except Exception as e:
+            logger.error(f"初始化订阅配置失败: {e}")
+            self.state.sub_configs = {}
 
-        self.services.check_patch_lifetime()
+        try:
+            self.services.check_patch_lifetime()
+        except Exception as e:
+            logger.error(f"检查补丁生命周期失败: {e}")
+
         self._start_scheduler()
 
     def _start_scheduler(self):

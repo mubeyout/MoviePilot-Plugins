@@ -1,3 +1,4 @@
+# Category: API客户端
 """
 ThePornDB API 客户端
 移植自 Jellyfin.Plugin.ThePornDB

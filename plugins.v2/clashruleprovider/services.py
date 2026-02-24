@@ -975,6 +975,7 @@ class ClashRuleProviderService:
                         proxy_types.add(proxy_type)
                 logger.info(f"已刷新: {UtilsProvider.get_url_domain(url)}. 节点数量: {len(proxies_list)}. 代理类型: {proxy_types}")
 
+            # 更宽松的验证模式,跳过不支持的代理类型
             conf = ClashConfig.model_validate(rs)
         except ValidationError as e:
             domain = UtilsProvider.get_url_domain(url)
@@ -995,7 +996,37 @@ class ClashRuleProviderService:
                         if isinstance(p, dict):
                             all_proxy_types.add(p.get('type', 'unknown'))
                     logger.error(f"  订阅中的代理类型: {all_proxy_types}")
-            return None, None
+
+            # 尝试过滤掉不支持的代理类型后重新验证
+            try:
+                if isinstance(rs, dict) and ClashKey.PROXIES in rs:
+                    valid_proxies = []
+                    unsupported_types = set()
+                    for p in rs[ClashKey.PROXIES]:
+                        if isinstance(p, dict):
+                            proxy_type = p.get('type', 'unknown')
+                            # 尝试验证单个代理
+                            try:
+                                from .models.proxy import Proxy
+                                Proxy.model_validate(p)
+                                valid_proxies.append(p)
+                            except ValidationError:
+                                unsupported_types.add(proxy_type)
+                                logger.warning(f"跳过不支持的代理类型: {proxy_type}, 节点: {p.get('name', 'unknown')}")
+                    if unsupported_types:
+                        logger.warning(f"{domain}: 过滤了 {len(unsupported_types)} 种不支持的代理类型: {unsupported_types}")
+                    if valid_proxies:
+                        rs[ClashKey.PROXIES] = valid_proxies
+                        conf = ClashConfig.model_validate(rs)
+                        logger.info(f"{domain}: 使用过滤后的配置, 有效节点: {len(valid_proxies)}")
+                    else:
+                        logger.error(f"{domain}: 没有有效的代理节点")
+                        return None, None
+                else:
+                    return None, None
+            except Exception as retry_err:
+                logger.error(f"重试验证失败: {retry_err}")
+                return None, None
         except Exception as e:
             logger.error(f"解析配置出错： {e}")
             return None, None
@@ -1012,20 +1043,41 @@ class ClashRuleProviderService:
         res = {}
         sub_info_map = self.state.subscription_info
         sub_configs_map = self.state.sub_configs
-        
+
+        # 先在内存中收集所有更新,避免部分更新失败导致数据不一致
+        temp_sub_info_map = {}
+        temp_sub_configs_map = {}
+
         for sub_conf in self.state.config.subscriptions_config:
             url = sub_conf.url
             if not sub_info_map.get(url).enabled:
+                temp_sub_info_map[url] = sub_info_map.get(url)
+                if url in sub_configs_map:
+                    temp_sub_configs_map[url] = sub_configs_map[url]
                 continue
+
             conf, sub_info = await self.async_get_subscription(url)
             if not conf:
                 res[url] = False
+                # 保留旧数据
+                temp_sub_info_map[url] = sub_info_map.get(url)
+                if url in sub_configs_map:
+                    temp_sub_configs_map[url] = sub_configs_map[url]
                 continue
-            sub_info_map[url] = sub_info
+
+            temp_sub_info_map[url] = sub_info
+            temp_sub_configs_map[url] = conf
             res[url] = True
-            sub_configs_map[url] = conf
-        self.state.subscription_info = sub_info_map
-        self.state.sub_configs = sub_configs_map
+
+        # 只有所有订阅都处理完成后才更新状态
+        try:
+            self.state.subscription_info = temp_sub_info_map
+            self.state.sub_configs = temp_sub_configs_map
+        except Exception as e:
+            logger.error(f"Failed to save subscription updates: {e}")
+            # 如果保存失败,返回所有失败
+            return {url: False for url in res}
+
         return res
 
     async def async_refresh_acl4ssr(self):

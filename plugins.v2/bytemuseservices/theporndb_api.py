@@ -357,12 +357,30 @@ class ThePornDBApiClient:
                     # 查找完全匹配的结果
                     exact_matches = [s for s in scenes_data if s.get('external_id', '').lower() == keyword.lower()]
 
-                    if exact_matches:
-                        logger.info(f"ThePornDB JAV: 找到 {len(exact_matches)} 个完全匹配结果")
-                        return [ThePornDBJAVScene.model_validate(item) for item in exact_matches]
+                    scenes_to_validate = exact_matches if exact_matches else scenes_data
 
-                    logger.debug(f"ThePornDB JAV: 找到 {len(scenes_data)} 个结果，无完全匹配")
-                    return [ThePornDBJAVScene.model_validate(item) for item in scenes_data]
+                    try:
+                        validated_scenes = []
+                        for item in scenes_to_validate:
+                            try:
+                                validated_scenes.append(ThePornDBJAVScene.model_validate(item))
+                            except Exception as ve:
+                                logger.debug(f"单个场景验证失败，跳过: {str(ve)}, 数据: {item}")
+                                continue
+
+                        if validated_scenes:
+                            if exact_matches:
+                                logger.info(f"ThePornDB JAV: 找到 {len(validated_scenes)} 个完全匹配结果")
+                            else:
+                                logger.debug(f"ThePornDB JAV: 验证了 {len(validated_scenes)}/{len(scenes_to_validate)} 个场景")
+                            return validated_scenes
+                        else:
+                            # 所有场景验证失败，返回空列表
+                            logger.debug(f"ThePornDB JAV: 所有 {len(scenes_to_validate)} 个场景验证失败")
+                            return []
+                    except Exception as e:
+                        logger.error(f"ThePornDB JAV 场景验证失败: {str(e)}")
+                        return []
 
             logger.warning(f"ThePornDB JAV API 搜索未找到结果")
             return None

@@ -1,7 +1,7 @@
 """
 推荐模块
 提供推荐内容探索服务
-使用 ThePornDB API 作为数据源
+使用 ByteMuse API 作为数据源
 """
 from typing import List, Dict, Any
 from app.schemas import MediaInfo, DiscoverMediaSource
@@ -9,17 +9,22 @@ from app.core.config import settings
 from app.log import logger
 from cachetools import cached, TTLCache
 
-# ThePornDB API 客户端
-from ..theporndb_api import ThePornDBApiClient
+# ByteMuse API 客户端
+from ..bytemuse_api import ByteMuseApiClient
+from ..schema import ByteMuseMovie
 
 # 全局配置
-_theporndb_api_token = "rlsxVnIRsrxAw4JH7UTIzLQQWQQKfcRpEpu4qehk0e4b96da"
+_bytemuse_base_url = "http://10.0.0.1:3750"
+_bytemuse_username = "mubey"
+_bytemuse_password = "355492"
 
 
 def get_api(master_plugin):
     """获取API列表"""
-    global _theporndb_api_token
-    _theporndb_api_token = master_plugin.theporndb_api_token
+    global _bytemuse_base_url, _bytemuse_username, _bytemuse_password
+    _bytemuse_base_url = master_plugin.bytemuse_base_url
+    _bytemuse_username = master_plugin.bytemuse_username
+    _bytemuse_password = master_plugin.bytemuse_password
     return [
         {
             "path": "/bytemuse_recommendations",
@@ -31,101 +36,35 @@ def get_api(master_plugin):
     ]
 
 
-# 精选推荐番号列表
-_RECOMMENDED_CODES = {
-    "all": [
-        # S1 精选
-        "SSIS-001", "SSIS-100", "SSIS-200", "SSIS-300", "SSIS-400",
-        "IPX-001", "IPX-100", "IPX-200", "IPX-300",
-        # Moodyz 精选
-        "MIDE-001", "MIDE-100", "MIDE-200", "MIDE-300",
-        "MIAB-001", "MIAB-100", "MIAB-200",
-        # Premium 精选
-        "PRED-001", "PRED-100", "PRED-200", "PRED-300",
-        # IdeaPocket 精选
-        "IPZZ-001", "IPZZ-100", "IPZZ-200",
-    ],
-    "high_rated": [
-        # 高分作品
-        "SSIS-391", "SSIS-453", "SSIS-542",
-        "MIDV-001", "MIDV-100",
-        "PRED-200", "PRED-300",
-    ],
-    "popular": [
-        # 热门作品
-        "SSIS-001", "IPX-292", "MIDE-479",
-        "PRED-100", "SSIS-495",
-    ],
-    "trending": [
-        # 趋势作品
-        "SSIS-800", "IPX-900", "MIDE-800",
-        "PRED-600", "IPZZ-300",
-    ],
-}
-
-
-def _jav_to_media(jav_data: Any) -> MediaInfo:
+def _movie_to_media(movie: ByteMuseMovie) -> MediaInfo:
     """
-    将 ThePornDB JAV 数据转换为 MediaInfo
+    将 ByteMuseMovie 转换为 MediaInfo
 
-    :param jav_data: ThePornDB JAV 场景或详情数据
+    :param movie: ByteMuseMovie 对象
     :return: MediaInfo 对象
     """
-    # 处理不同类型的数据结构
-    if hasattr(jav_data, 'model_dump'):
-        data = jav_data.model_dump()
-    elif isinstance(jav_data, dict):
-        data = jav_data
+    # 处理标题 - 只显示番号
+    title = movie.code or movie.title or ""
+
+    # 确保 media_id 永远不为空
+    if movie.code:
+        media_id = movie.code
+    elif movie.id:
+        media_id = f"bytemuse_{movie.id}"
     else:
-        data = {}
-
-    # 提取标题
-    title = data.get("title", "")
-    external_id = data.get("external_id", "")
-    if external_id and external_id not in title:
-        title = f"{external_id} {title}".strip()
-
-    # 提取图片URL（优先使用 poster，然后 background）
-    poster_url = ""
-    if data.get("poster"):
-        poster_url = data.get("poster", "")
-    elif data.get("posters"):
-        posters = data.get("posters", {})
-        if isinstance(posters, dict):
-            poster_url = posters.get("full") or posters.get("large") or posters.get("medium") or ""
-    elif data.get("background"):
-        background = data.get("background", {})
-        if isinstance(background, dict):
-            poster_url = background.get("full") or background.get("large") or background.get("medium") or ""
-
-    # 如果有演员信息，添加到标题
-    performers = data.get("performers", [])
-    actor_names = []
-    if performers:
-        for p in performers:
-            if isinstance(p, dict):
-                name = p.get("name") or p.get("parent", {}).get("name") if p.get("parent") else ""
-                if name:
-                    actor_names.append(name)
-        if actor_names:
-            title = f"{title} ({', '.join(actor_names[:3])})"
-
-    # 提取厂牌信息
-    site = data.get("site", {})
-    studio_name = ""
-    if isinstance(site, dict):
-        studio_name = site.get("name", "")
+        media_id = title or f"unknown_{id(movie)}"
 
     return MediaInfo(
         type="电影",
         title=title,
-        mediaid_prefix="theporndb",
-        media_id=data.get("id") or data.get("uuid") or data.get("external_id", ""),
-        poster_path=poster_url,
-        vote_average=None,
-        year=data.get("date", "")[:4] if data.get("date") else None,
-        overview=data.get("description", ""),
-        studio=studio_name,
+        mediaid_prefix="bytemuse",
+        media_id=media_id,
+        imdb_id=f"bytemuse:{movie.code}" if movie.code else f"bytemuse:{media_id}",  # 用于订阅识别
+        poster_path=movie.poster_url or movie.cover_url or movie.thumb_url or "",
+        vote_average=movie.score,
+        year=movie.release_date[:4] if movie.release_date else None,
+        overview=movie.summary or "",
+        studio=movie.studio or movie.publisher or "",
     )
 
 
@@ -142,33 +81,42 @@ def recommendations(
     :param count: 每页数量
     :return: 媒体信息列表
     """
-    client = ThePornDBApiClient(api_token=_theporndb_api_token)
+    client = ByteMuseApiClient(
+        base_url=_bytemuse_base_url,
+        username=_bytemuse_username,
+        password=_bytemuse_password,
+    )
 
-    # 获取该分类的推荐番号列表
-    codes = _RECOMMENDED_CODES.get(category, _RECOMMENDED_CODES["all"])
+    # 分类映射
+    category_map = {
+        "all": "all",
+        "high_rated": "high_rated",
+        "popular": "popular",
+        "trending": "trending",
+    }
+    api_category = category_map.get(category, "all")
 
     try:
-        results = []
+        # 使用 ByteMuse API 获取推荐内容
+        logger.debug(f"获取推荐内容: category={api_category}, page={page}, count={count}")
+        movies = client.get_recommend(category=api_category, page=page, page_size=count)
 
-        # 计算分页
-        start_idx = (page - 1) * count
-        end_idx = start_idx + count
+        logger.debug(f"API返回: movies={movies}, type={type(movies) if movies else 'None'}")
 
-        # 获取对应页码的番号
-        paginated_codes = codes[start_idx:end_idx]
+        if movies:
+            logger.debug(f"开始转换 {len(movies)} 部电影数据")
+            result = []
+            for i, movie in enumerate(movies):
+                try:
+                    media = _movie_to_media(movie)
+                    logger.debug(f"电影 {i+1}: code={movie.code}, title={movie.title[:20] if movie.title else 'N/A'}..., media_id={media.media_id}")
+                    result.append(media)
+                except Exception as e:
+                    logger.error(f"转换电影 {i+1} 失败: {str(e)}, movie={movie}")
+            return result
 
-        # 搜索每个番号
-        for code in paginated_codes:
-            jav_results = client.search_jav(code)
-            if jav_results:
-                for jav in jav_results:
-                    identifier = jav.slug if hasattr(jav, 'slug') and jav.slug else str(jav.id)
-                    detail = client.get_jav_detail(identifier)
-                    if detail:
-                        results.append(_jav_to_media(detail))
-                        break  # 只取第一个结果
-
-        return results
+        logger.warning(f"未获取到推荐内容: movies is {movies}")
+        return []
 
     except Exception as err:
         logger.error(f"获取推荐内容失败: {str(err)}")
@@ -216,8 +164,8 @@ def recommendations_filter_ui() -> List[dict]:
 def discover_source(master_plugin, event_data):
     """注册推荐探索源"""
     recommendations_source = DiscoverMediaSource(
-        name="ByteMuse推荐",
-        mediaid_prefix="theporndb_rec",
+        name="推荐",
+        mediaid_prefix="bytemuse_rec",
         api_path=f"plugin/ByteMuseServices/bytemuse_recommendations?apikey={settings.API_TOKEN}",
         filter_params={
             "category": "all",

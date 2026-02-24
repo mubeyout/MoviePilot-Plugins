@@ -14,6 +14,7 @@ class ByteMuseActor(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ByteMuseMovie(BaseModel):
@@ -39,12 +40,21 @@ class ByteMuseMovie(BaseModel):
     preview_url: Optional[str] = Field(default=None, description="预览URL")
     still_photo: Optional[str] = Field(default=None, description="剧照")
     score: Optional[float] = Field(default=None, description="评分")
-    genres: List[str] = Field(default_factory=list, description="类型标签")
+    genres: Optional[str] = Field(default=None, description="类型标签(逗号分隔)")
     summary: str = Field(default="", description="简介")
     images: List[str] = Field(default_factory=list, description="预览图列表")
+    # API 返回的额外字段
+    create_time: Optional[str] = Field(default=None, description="创建时间")
+    update_time: Optional[str] = Field(default=None, description="更新时间")
+    status: Optional[str] = Field(default=None, description="状态")
+    mode: Optional[str] = Field(default=None, description="模式")
+    star: Optional[str] = Field(default=None, description="星标")
+    weight: Optional[float] = Field(default=None, description="权重")
+    is_exist_server: Optional[bool] = Field(default=None, description="服务器是否存在")
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 # ==================== ThePornDB 数据模型 ====================
@@ -57,6 +67,7 @@ class ThePornDBImage(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBSite(BaseModel):
@@ -69,6 +80,7 @@ class ThePornDBSite(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBPerformerExtras(BaseModel):
@@ -79,6 +91,7 @@ class ThePornDBPerformerExtras(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBPerformer(BaseModel):
@@ -91,6 +104,7 @@ class ThePornDBPerformer(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBTag(BaseModel):
@@ -100,6 +114,7 @@ class ThePornDBTag(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBScene(BaseModel):
@@ -113,6 +128,7 @@ class ThePornDBScene(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBSearchResponse(BaseModel):
@@ -138,6 +154,7 @@ class ThePornDBSceneDetail(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBDetailResponse(BaseModel):
@@ -164,6 +181,7 @@ class ThePornDBJAVPerformerExtra(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVPerformerParent(BaseModel):
@@ -177,6 +195,7 @@ class ThePornDBJAVPerformerParent(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVPerformer(BaseModel):
@@ -190,6 +209,7 @@ class ThePornDBJAVPerformer(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVImage(BaseModel):
@@ -201,46 +221,51 @@ class ThePornDBJAVImage(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVSite(BaseModel):
     """ThePornDB JAV 站点信息"""
-    id: int = Field(default=0, description="站点ID")
-    name: str = Field(default="", description="站点名称")
-    url: str = Field(default="", description="站点URL")
+    id: Optional[int] = Field(default=None, description="站点ID")
+    name: Optional[str] = Field(default=None, description="站点名称")
+    url: Optional[str] = Field(default=None, description="站点URL")
     logo: Optional[str] = Field(default=None, description="Logo URL")
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVBackground(BaseModel):
     """ThePornDB JAV 背景图片"""
-    url: str = Field(default="", description="原图URL")
-    large: str = Field(default="", description="大图URL")
-    medium: str = Field(default="", description="中图URL")
-    small: str = Field(default="", description="小图URL")
+    url: Optional[str] = Field(default=None, description="原图URL")
+    large: Optional[str] = Field(default=None, description="大图URL")
+    medium: Optional[str] = Field(default=None, description="中图URL")
+    small: Optional[str] = Field(default=None, description="小图URL")
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVScene(BaseModel):
     """ThePornDB JAV 搜索结果"""
-    id: int = Field(default=0, description="场景ID (数字)")
+    id: str = Field(default="", description="场景ID (UUID字符串)")
     uuid: Optional[str] = Field(default=None, description="场景UUID (可能不存在)")
     title: str = Field(default="", description="标题")
-    slug: str = Field(default="", description="Slug (用于构建详情URL)")
+    slug: Optional[str] = Field(default=None, description="Slug (用于构建详情URL)")
+    external_id: Optional[str] = Field(default=None, description="外部ID/番号")
     date: Optional[str] = Field(default=None, description="日期")
     duration: Optional[int] = Field(default=None, description="时长(秒)")
-    link: str = Field(default="", description="页面链接")
+    link: Optional[str] = Field(default=None, description="页面链接")
     type: str = Field(default="JAV", description="类型")
-    background: ThePornDBJAVBackground = Field(default_factory=ThePornDBJAVBackground, description="背景图片")
-    site: ThePornDBJAVSite = Field(default_factory=ThePornDBJAVSite, description="站点信息")
+    background: Optional[ThePornDBJAVBackground] = Field(default=None, description="背景图片")
+    site: Optional[ThePornDBJAVSite] = Field(default=None, description="站点信息")
     performers: List[ThePornDBJAVPerformer] = Field(default_factory=list, description="演员列表")
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
 
 
 class ThePornDBJAVSearchResponse(BaseModel):
@@ -269,3 +294,4 @@ class ThePornDBJAVDetail(BaseModel):
 
     class Config:
         populate_by_name = True
+        extra = 'allow'
