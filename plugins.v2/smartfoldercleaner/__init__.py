@@ -346,12 +346,13 @@ class SmartFolderCleaner(_PluginBase):
                 self._onlyonce = False
                 self._update_config()
                 try:
-                    deleted_count = self._scan_and_delete()
-                    if self._notify and deleted_count > 0:
+                    deleted_count, deleted_files_count = self._scan_and_delete()
+                    if self._notify and (deleted_count > 0 or deleted_files_count > 0):
                         self.post_message(
                             mtype=NotificationType.Plugin,
                             title="智能文件夹清理",
-                            text=f"立即运行完成，共删除 {deleted_count} 个空文件夹"
+                            text=f"立即运行完成，共删除 {deleted_count} 个空文件夹" +
+                                 (f"，{deleted_files_count} 个无效文件" if deleted_files_count > 0 else "")
                         )
                     logger.info(f"智能文件夹清理立即运行完成，共删除 {deleted_count} 个文件夹")
                 except Exception as e:
