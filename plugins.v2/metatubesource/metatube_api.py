@@ -3,6 +3,7 @@
 Metatube API 客户端
 """
 import re
+import os
 from typing import Optional, List, Dict
 from urllib.parse import urljoin, quote
 
@@ -10,6 +11,7 @@ from app.log import logger
 from app.utils.http import RequestUtils, AsyncRequestUtils
 
 from .schema import MetatubeMovie, MetatubeSearchResponse, MetatubeMovieDetail, MetatubeDetailResponse
+from .utils.retry import retry_on_failure, retry_on_failure_async
 
 
 class MetatubeApiClient:
@@ -21,6 +23,12 @@ class MetatubeApiClient:
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
+
+    # 默认 API 地址（支持环境变量覆盖）
+    DEFAULT_API_URL = os.getenv(
+        "METATUBE_API_URL",
+        "http://127.0.0.1:8080"
+    )
 
     # 番号正则表达式列表（按优先级排序，更具体的规则在前）
     NUMBER_PATTERNS = [
@@ -109,16 +117,17 @@ class MetatubeApiClient:
         r'(\d{5,6})[-_](\d{3})',
     ]
 
-    def __init__(self, base_url: str = "http://10.0.0.1:3244",
+    def __init__(self, base_url: str = None,
                  timeout: int = 10, proxies: Dict[str, str] = None):
         """
         初始化 Metatube API 客户端
 
-        :param base_url: API 基础地址
+        :param base_url: API 基础地址（为空则使用环境变量或默认值）
         :param timeout: 请求超时时间(秒)
         :param proxies: 代理配置
         """
-        self._base_url = base_url.rstrip('/')
+        # 优先使用传入的 URL，否则使用环境变量，最后使用默认值
+        self._base_url = (base_url or self.DEFAULT_API_URL).rstrip('/')
         self._timeout = timeout
         self._proxies = proxies
 
@@ -128,7 +137,8 @@ class MetatubeApiClient:
 
     @base_url.setter
     def base_url(self, value: str):
-        self._base_url = value.rstrip('/') if value else "http://127.0.0.1:8080"
+        """设置 API 基础地址"""
+        self._base_url = value.rstrip('/') if value else self.DEFAULT_API_URL
 
     @staticmethod
     def extract_number(filename: str) -> Optional[str]:
@@ -203,181 +213,165 @@ class MetatubeApiClient:
         end = endpoint.lstrip('/')
         return f"{base}/{end}"
 
+    @retry_on_failure(max_retries=3, delay=1.0, backoff=2.0)
     def search(self, keyword: str, fallback: bool = True) -> Optional[List[MetatubeMovie]]:
         """
-        搜索媒体
+        搜索媒体（带自动重试）
 
         :param keyword: 搜索关键词(番号)
         :param fallback: 是否启用回退搜索
         :return: 搜索结果列表
         """
-        try:
-            url = self._build_url(f"/v1/movies/search")
-            params = {
-                "q": keyword,
-                "fallback": "true" if fallback else "false"
-            }
+        url = self._build_url(f"/v1/movies/search")
+        params = {
+            "q": keyword,
+            "fallback": "true" if fallback else "false"
+        }
 
-            response = RequestUtils(
-                timeout=self._timeout,
-                proxies=self._proxies,
-                headers=self.DEFAULT_HEADERS
-            ).get_res(url, params=params)
+        response = RequestUtils(
+            timeout=self._timeout,
+            proxies=self._proxies,
+            headers=self.DEFAULT_HEADERS
+        ).get_res(url, params=params)
 
-            if response is None:
-                logger.warning(f"Metatube API 请求失败: {url}")
-                return None
-
-            if response.status_code != 200:
-                logger.warning(f"Metatube API 返回状态码: {response.status_code}")
-                return None
-
-            data = response.json()
-            if not data:
-                return None
-
-            # 解析响应
-            if isinstance(data, dict) and 'data' in data:
-                result = MetatubeSearchResponse.model_validate(data)
-                return result.data
-            elif isinstance(data, list):
-                return [MetatubeMovie.model_validate(item) for item in data]
-
+        if response is None:
+            logger.warning(f"Metatube API 请求失败: {url}")
             return None
 
-        except Exception as e:
-            logger.error(f"Metatube 搜索异常: {str(e)}")
+        if response.status_code != 200:
+            logger.warning(f"Metatube API 返回状态码: {response.status_code}")
             return None
 
+        data = response.json()
+        if not data:
+            return None
+
+        # 解析响应
+        if isinstance(data, dict) and 'data' in data:
+            result = MetatubeSearchResponse.model_validate(data)
+            return result.data
+        elif isinstance(data, list):
+            return [MetatubeMovie.model_validate(item) for item in data]
+
+        return None
+
+    @retry_on_failure_async(max_retries=3, delay=1.0, backoff=2.0)
     async def async_search(self, keyword: str, fallback: bool = True) -> Optional[List[MetatubeMovie]]:
         """
-        异步搜索媒体
+        异步搜索媒体（带自动重试）
 
         :param keyword: 搜索关键词(番号)
         :param fallback: 是否启用回退搜索
         :return: 搜索结果列表
         """
-        try:
-            url = self._build_url(f"/v1/movies/search")
-            params = {
-                "q": keyword,
-                "fallback": "true" if fallback else "false"
-            }
+        url = self._build_url(f"/v1/movies/search")
+        params = {
+            "q": keyword,
+            "fallback": "true" if fallback else "false"
+        }
 
-            response = await AsyncRequestUtils(
-                timeout=self._timeout,
-                proxies=self._proxies,
-                headers=self.DEFAULT_HEADERS
-            ).get_res(url, params=params)
+        response = await AsyncRequestUtils(
+            timeout=self._timeout,
+            proxies=self._proxies,
+            headers=self.DEFAULT_HEADERS
+        ).get_res(url, params=params)
 
-            if response is None:
-                logger.warning(f"Metatube API 异步请求失败: {url}")
-                return None
-
-            if response.status_code != 200:
-                logger.warning(f"Metatube API 返回状态码: {response.status_code}")
-                return None
-
-            data = response.json()
-            if not data:
-                return None
-
-            # 解析响应
-            if isinstance(data, dict) and 'data' in data:
-                result = MetatubeSearchResponse.model_validate(data)
-                return result.data
-            elif isinstance(data, list):
-                return [MetatubeMovie.model_validate(item) for item in data]
-
+        if response is None:
+            logger.warning(f"Metatube API 异步请求失败: {url}")
             return None
 
-        except Exception as e:
-            logger.error(f"Metatube 异步搜索异常: {str(e)}")
+        if response.status_code != 200:
+            logger.warning(f"Metatube API 返回状态码: {response.status_code}")
             return None
 
+        data = response.json()
+        if not data:
+            return None
+
+        # 解析响应
+        if isinstance(data, dict) and 'data' in data:
+            result = MetatubeSearchResponse.model_validate(data)
+            return result.data
+        elif isinstance(data, list):
+            return [MetatubeMovie.model_validate(item) for item in data]
+
+        return None
+
+    @retry_on_failure(max_retries=3, delay=1.0, backoff=2.0)
     def get_detail(self, provider: str, movie_id: str) -> Optional[MetatubeMovieDetail]:
         """
-        获取电影详情
+        获取电影详情（带自动重试）
 
         :param provider: 数据来源
         :param movie_id: 电影ID
         :return: 电影详情
         """
-        try:
-            url = self._build_url(f"/v1/movies/{quote(provider)}/{quote(movie_id)}")
+        url = self._build_url(f"/v1/movies/{quote(provider)}/{quote(movie_id)}")
 
-            response = RequestUtils(
-                timeout=self._timeout,
-                proxies=self._proxies,
-                headers=self.DEFAULT_HEADERS
-            ).get_res(url)
+        response = RequestUtils(
+            timeout=self._timeout,
+            proxies=self._proxies,
+            headers=self.DEFAULT_HEADERS
+        ).get_res(url)
 
-            if response is None:
-                logger.warning(f"Metatube API 获取详情失败: {url}")
-                return None
-
-            if response.status_code != 200:
-                logger.warning(f"Metatube API 返回状态码: {response.status_code}")
-                return None
-
-            data = response.json()
-            if not data:
-                return None
-
-            # 解析响应
-            if isinstance(data, dict):
-                if 'data' in data:
-                    return MetatubeMovieDetail.model_validate(data['data'])
-                else:
-                    return MetatubeMovieDetail.model_validate(data)
-
+        if response is None:
+            logger.warning(f"Metatube API 获取详情失败: {url}")
             return None
 
-        except Exception as e:
-            logger.error(f"Metatube 获取详情异常: {str(e)}")
+        if response.status_code != 200:
+            logger.warning(f"Metatube API 返回状态码: {response.status_code}")
             return None
 
+        data = response.json()
+        if not data:
+            return None
+
+        # 解析响应
+        if isinstance(data, dict):
+            if 'data' in data:
+                return MetatubeMovieDetail.model_validate(data['data'])
+            else:
+                return MetatubeMovieDetail.model_validate(data)
+
+        return None
+
+    @retry_on_failure_async(max_retries=3, delay=1.0, backoff=2.0)
     async def async_get_detail(self, provider: str, movie_id: str) -> Optional[MetatubeMovieDetail]:
         """
-        异步获取电影详情
+        异步获取电影详情（带自动重试）
 
         :param provider: 数据来源
         :param movie_id: 电影ID
         :return: 电影详情
         """
-        try:
-            url = self._build_url(f"/v1/movies/{quote(provider)}/{quote(movie_id)}")
+        url = self._build_url(f"/v1/movies/{quote(provider)}/{quote(movie_id)}")
 
-            response = await AsyncRequestUtils(
-                timeout=self._timeout,
-                proxies=self._proxies,
-                headers=self.DEFAULT_HEADERS
-            ).get_res(url)
+        response = await AsyncRequestUtils(
+            timeout=self._timeout,
+            proxies=self._proxies,
+            headers=self.DEFAULT_HEADERS
+        ).get_res(url)
 
-            if response is None:
-                logger.warning(f"Metatube API 异步获取详情失败: {url}")
-                return None
-
-            if response.status_code != 200:
-                logger.warning(f"Metatube API 返回状态码: {response.status_code}")
-                return None
-
-            data = response.json()
-            if not data:
-                return None
-
-            # 解析响应
-            if isinstance(data, dict):
-                if 'data' in data:
-                    return MetatubeMovieDetail.model_validate(data['data'])
-                else:
-                    return MetatubeMovieDetail.model_validate(data)
-
+        if response is None:
+            logger.warning(f"Metatube API 异步获取详情失败: {url}")
             return None
 
-        except Exception as e:
-            logger.error(f"Metatube 异步获取详情异常: {str(e)}")
+        if response.status_code != 200:
+            logger.warning(f"Metatube API 返回状态码: {response.status_code}")
             return None
+
+        data = response.json()
+        if not data:
+            return None
+
+        # 解析响应
+        if isinstance(data, dict):
+            if 'data' in data:
+                return MetatubeMovieDetail.model_validate(data['data'])
+            else:
+                return MetatubeMovieDetail.model_validate(data)
+
+        return None
 
     def test_connection(self) -> bool:
         """

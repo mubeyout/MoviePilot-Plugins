@@ -48,6 +48,9 @@ class RecognitionConfig:
     show_failure_detail: bool = True
     jav_number_auto_match: bool = True
     search_enabled: bool = False
+    # 小文件配置
+    skip_small_files: bool = False
+    small_file_threshold: int = 100  # MB
 
 @dataclass
 class MetatubeConfig:
@@ -128,6 +131,8 @@ class MetatubeConfig:
             'show_failure_detail': config_dict.get('show_failure_detail', True),
             'jav_number_auto_match': config_dict.get('jav_number_auto_match', True),
             'search_enabled': config_dict.get('search_enabled', False),
+            'skip_small_files': config_dict.get('skip_small_files', False),
+            'small_file_threshold': int(config_dict.get('small_file_threshold', 100)),
         }
 
         return cls(
@@ -166,4 +171,6 @@ class MetatubeConfig:
             'show_failure_detail': self.recognition.show_failure_detail,
             'jav_number_auto_match': self.recognition.jav_number_auto_match,
             'search_enabled': self.recognition.search_enabled,
+            'skip_small_files': self.recognition.skip_small_files,
+            'small_file_threshold': self.recognition.small_file_threshold,
         }

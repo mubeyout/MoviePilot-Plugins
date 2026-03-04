@@ -96,8 +96,8 @@ class KeywordMatcher:
         if self._check_exclude_keywords(text):
             return KeywordMatchResult("其他", [], 0.0)
 
-        # 检查各个分类
-        categories = ["日系", "欧美系", "中文系", "其他"]
+        # 检查各个分类 - 调整优先级，中文系优先
+        categories = ["中文系", "日系", "欧美系", "其他"]
         best_match = "其他"
         best_matched = []
         max_confidence = 0.0
@@ -105,8 +105,13 @@ class KeywordMatcher:
         for category in categories:
             matched, keywords = self._match_category_keywords(text, category)
             if matched:
+                # 计算置信度
                 confidence = len(keywords) / max(1, len(text.split()))
-                if confidence > max_confidence:
+
+                # 中文系使用更低的阈值（因为中文关键字更具体）
+                threshold = 0.03 if category == "中文系" else 0.08
+
+                if confidence > max_confidence and confidence >= threshold:
                     max_confidence = confidence
                     best_match = category
                     best_matched = keywords

@@ -363,9 +363,9 @@ class MetatubeSource(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         """初始化插件"""
-        # 初始化搜索频率限制
-        self._last_search_time = None
-        self._search_interval = 0.5  # 500ms 最小搜索间隔
+        # 初始化线程安全的频率限制器
+        from .utils.concurrency import RateLimiter
+        self._rate_limiter = RateLimiter(interval=0.5)
 
         plugin_instance: MetatubeSource = self
 
@@ -502,6 +502,9 @@ class MetatubeSource(_PluginBase):
             self._jav_number_auto_match = bool(config.get("jav_number_auto_match") or True)
             # 搜索数据源配置
             self._search_enabled = bool(config.get("search_enabled") or False)
+            # 小文件配置
+            self._skip_small_files = bool(config.get("skip_small_files") or False)
+            self._small_file_threshold = int(config.get("small_file_threshold") or 100)
             # 新增配置项
             self._exclude_keywords = config.get("exclude_keywords") or ""
             self._keywords_file_path = "keywords.json"  # 固定路径，不再提供配置
@@ -642,15 +645,12 @@ class MetatubeSource(_PluginBase):
             return []
 
         # 搜索频率限制（避免前端自动完成造成的大量请求）
-        current_time = datetime.now()
-        if self._last_search_time:
-            time_diff = (current_time - self._last_search_time).total_seconds()
-            if time_diff < self._search_interval:
-                logger.debug(f"Metatube: 搜索频率过高，跳过搜索: '{title}' (间隔: {time_diff:.2f}s)")
-                return []
+        if not self._rate_limiter.acquire():
+            wait_time = self._rate_limiter.get_wait_time()
+            logger.debug(f"Metatube: 搜索频率过高，跳过搜索: '{title}' (需等待 {wait_time:.2f}s)")
+            return []
 
         try:
-            self._last_search_time = current_time
             results = self._metatube_client.search(title)
             if not results:
                 return []
@@ -714,25 +714,43 @@ class MetatubeSource(_PluginBase):
             {
                 "component": "VForm",
                 "content": [
+                    # ==================== 功能开关 ====================
                     {
                         "component": "VRow",
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2 mt-4"},
+                                        "text": "⚙️ 功能开关"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "enabled",
-                                            "label": "启用插件"
+                                            "label": "启用插件",
+                                            "hint": "开启后将自动识别番号媒体"
                                         },
                                     }
-                                ],
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -742,11 +760,11 @@ class MetatubeSource(_PluginBase):
                                             "hint": "区分大小写和全半角"
                                         },
                                     }
-                                ],
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -756,11 +774,16 @@ class MetatubeSource(_PluginBase):
                                             "hint": "在日志中显示详细失败原因"
                                         },
                                     }
-                                ],
-                            },
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -771,43 +794,10 @@ class MetatubeSource(_PluginBase):
                                         }
                                     }
                                 ]
-                            }
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "theporndb_enabled",
-                                            "label": "启用ThePornDB",
-                                            "hint": "欧美系内容使用ThePornDB识别"
-                                        }
-                                    }
-                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "bytemuse_enabled",
-                                            "label": "启用ByteMuse",
-                                            "hint": "启用ByteMuse作为主要识别源"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -821,7 +811,7 @@ class MetatubeSource(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -832,10 +822,43 @@ class MetatubeSource(_PluginBase):
                                         }
                                     }
                                 ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "theporndb_enabled",
+                                            "label": "启用ThePornDB",
+                                            "hint": "欧美系内容使用ThePornDB识别"
+                                        }
+                                    }
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "bytemuse_enabled",
+                                            "label": "启用ByteMuse",
+                                            "hint": "启用ByteMuse作为主要识别源"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -847,7 +870,28 @@ class MetatubeSource(_PluginBase):
                                     }
                                 ]
                             }
-                        ],
+                        ]
+                    },
+                    # ==================== 基础设置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "🔧 基础设置"
+                                    }
+                                ]
+                            }
+                        ]
                     },
                     {
                         "component": "VRow",
@@ -862,7 +906,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "api_url",
                                             "label": "Metatube API地址",
                                             "placeholder": "http://127.0.0.1:8080",
-                                            "hint": "Metatube服务地址"
+                                            "hint": "Metatube服务地址",
+                                            "prepend-icon": "mdi-server"
                                         }
                                     }
                                 ]
@@ -877,7 +922,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "theporndb_api_token",
                                             "label": "ThePornDB API Token",
                                             "placeholder": "从 https://theporndb.net 获取",
-                                            "hint": "登录后在设置页面获取 Metadata API Token"
+                                            "hint": "登录后在设置页面获取 Metadata API Token",
+                                            "prepend-icon": "mdi-key"
                                         }
                                     }
                                 ]
@@ -897,7 +943,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "bytemuse_url",
                                             "label": "ByteMuse API地址",
                                             "placeholder": "http://127.0.0.1:3750",
-                                            "hint": "ByteMuse服务地址"
+                                            "hint": "ByteMuse服务地址",
+                                            "prepend-icon": "mdi-server-network"
                                         }
                                     }
                                 ]
@@ -912,7 +959,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "bytemuse_username",
                                             "label": "ByteMuse 用户名",
                                             "placeholder": "请输入用户名",
-                                            "hint": "ByteMuse登录用户名"
+                                            "hint": "ByteMuse登录用户名",
+                                            "prepend-icon": "mdi-account"
                                         }
                                     }
                                 ]
@@ -928,7 +976,8 @@ class MetatubeSource(_PluginBase):
                                             "label": "ByteMuse 密码",
                                             "placeholder": "请输入密码",
                                             "hint": "ByteMuse登录密码",
-                                            "type": "password"
+                                            "type": "password",
+                                            "prepend-icon": "mdi-lock"
                                         }
                                     }
                                 ]
@@ -946,16 +995,39 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextField",
                                         "props": {
                                             "model": "timeout",
-                                            "label": "超时时间",
+                                            "label": "API超时时间",
                                             "type": "number",
                                             "placeholder": "30",
                                             "suffix": "秒",
-                                            "hint": "API请求超时时间（1-60秒）"
+                                            "hint": "API请求超时时间（1-60秒）",
+                                            "prepend-icon": "mdi-clock-outline"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "max_logs",
+                                            "label": "日志记录数",
+                                            "type": "number",
+                                            "placeholder": "100",
+                                            "hint": "最多保留的识别日志条数",
+                                            "prepend-icon": "mdi-format-list-bulleted"
                                         }
                                     }
                                 ]
                             }
                         ]
+                    },
+                    # ==================== 文件过滤设置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
                     },
                     {
                         "component": "VRow",
@@ -967,7 +1039,70 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "div",
                                         "props": {"class": "text-h6 mb-2"},
-                                        "text": "命名规则配置"
+                                        "text": "📁 文件过滤设置"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "skip_small_files",
+                                            "label": "跳过小文件",
+                                            "hint": "跳过小于指定大小的文件识别"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "small_file_threshold",
+                                            "label": "小文件阈值",
+                                            "placeholder": "100",
+                                            "suffix": "MB",
+                                            "hint": "小于此大小的文件将被跳过",
+                                            "type": "number",
+                                            "prepend-icon": "mdi-file-outline"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": []
+                            }
+                        ]
+                    },
+                    # ==================== 命名规则配置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "📝 命名规则配置"
                                     }
                                 ]
                             }
@@ -995,7 +1130,8 @@ class MetatubeSource(_PluginBase):
                                                 {"title": "完整格式", "value": "full"},
                                                 {"title": "自定义模板", "value": "custom"}
                                             ],
-                                            "hint": "选择文件重命名格式"
+                                            "hint": "选择文件重命名格式",
+                                            "prepend-icon": "mdi-rename-box"
                                         }
                                     }
                                 ]
@@ -1011,7 +1147,8 @@ class MetatubeSource(_PluginBase):
                                             "label": "演员数量",
                                             "type": "number",
                                             "placeholder": "2",
-                                            "hint": "最多显示几位演员"
+                                            "hint": "最多显示几位演员",
+                                            "prepend-icon": "mdi-account-multiple"
                                         }
                                     }
                                 ]
@@ -1026,7 +1163,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "custom_naming_template",
                                             "label": "自定义模板",
                                             "placeholder": "{number} {actor} [{studio}] ({year})",
-                                            "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}"
+                                            "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}",
+                                            "prepend-icon": "mdi-code-braces"
                                         }
                                     }
                                 ]
@@ -1043,7 +1181,7 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "div",
                                         "props": {"class": "text-h6 mb-2"},
-                                        "text": "关键词配置（按分类管理）"
+                                        "text": "🔑 关键词配置（按分类管理）"
                                     }
                                 ]
                             }
@@ -1060,7 +1198,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_japanese_keywords",
-                                            "label": "日系关键词",
+                                            "label": "🇯🇵 日系关键词",
                                             "placeholder": "SSIS, FC2, HEYZO...",
                                             "rows": 2,
                                             "hint": "日系内容识别关键词，逗号分隔"
@@ -1076,7 +1214,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_western_keywords",
-                                            "label": "欧美系关键词",
+                                            "label": "🇺🇸 欧美系关键词",
                                             "placeholder": "BRAZZERS, BLACKED, TUSHY...",
                                             "rows": 2,
                                             "hint": "欧美系内容识别关键词，逗号分隔"
@@ -1097,7 +1235,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_chinese_keywords",
-                                            "label": "中文系关键词",
+                                            "label": "🇨🇳 中文系关键词",
                                             "placeholder": "MD, 约炮, 探花...",
                                             "rows": 2,
                                             "hint": "中文系内容识别关键词，逗号分隔"
@@ -1113,7 +1251,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_other_keywords",
-                                            "label": "其他关键词",
+                                            "label": "📦 其他关键词",
                                             "placeholder": "高清, 无码, 有码...",
                                             "rows": 2,
                                             "hint": "其他通用特征关键词，逗号分隔"
@@ -1134,10 +1272,10 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "exclude_keywords",
-                                            "label": "排除关键词",
+                                            "label": "🚫 排除关键词（匹配后直接跳过）",
                                             "placeholder": "4K, UHD, HDR, FHD, HD, 2160P, 1080P, 720P, 60FPS, H.265, H.264, HEVC, XVID, WEB-DL, REMUX, BLURAY...",
                                             "rows": 3,
-                                            "hint": "匹配后直接跳过分类的关键词（画质标记、分辨率、编码格式等），逗号分隔。内置42个排除关键字：4K/UHD/HDR/FHD/HD/SD/2160P/1080P/720P/480P/360P/60FPS/120FPS/240FPS/H.265/H.264/HEVC/XVID/X264/X265/VC-1/VP9/AV1/AC3/DTS/AAC/FLAC/REMUX/WEB-DL/WEBRIP/BLURAY/NTSC/PAL/SECA/CD1/CD2/DISC1/DISC2"
+                                            "hint": "匹配后直接跳过分类的关键词（画质标记、分辨率、编码格式等），逗号分隔。内置排除关键字已包含常见画质和技术标记"
                                         }
                                     }
                                 ]
@@ -1589,6 +1727,37 @@ class MetatubeSource(_PluginBase):
         """构建分类字符串"""
         return f"{self.CATEGORY_PREFIX}/{subcategory}"
 
+    def _get_file_size_mb(self, meta: MetaBase, kwargs: dict) -> Optional[float]:
+        """
+        获取文件大小（MB）
+
+        :param meta: 元数据对象
+        :param kwargs: 额外参数，可能包含文件路径
+        :return: 文件大小（MB），如果无法获取则返回 None
+        """
+        try:
+            # 尝试从 kwargs 中获取文件路径
+            file_path = kwargs.get('path') or kwargs.get('file_path') or kwargs.get('filepath')
+
+            if file_path:
+                # 从文件路径获取大小
+                from pathlib import Path
+                path = Path(file_path)
+                if path.exists() and path.is_file():
+                    size_bytes = path.stat().st_size
+                    size_mb = size_bytes / (1024 * 1024)  # 转换为 MB
+                    return size_mb
+
+            # 尝试从 meta 对象获取文件大小（如果有）
+            if hasattr(meta, 'size') and meta.size:
+                size_mb = meta.size / (1024 * 1024)
+                return size_mb
+
+            return None
+        except Exception as e:
+            logger.debug(f"Metatube: 获取文件大小失败 - {str(e)}")
+            return None
+
     def _update_config(self):
         """更新配置"""
         self.update_config({
@@ -1616,7 +1785,9 @@ class MetatubeSource(_PluginBase):
             "bytemuse_username": self._bytemuse_username,
             "bytemuse_password": self._bytemuse_password,
             "jav_number_auto_match": self._jav_number_auto_match,
-            "search_enabled": self._search_enabled
+            "search_enabled": self._search_enabled,
+            "skip_small_files": self._skip_small_files,
+            "small_file_threshold": self._small_file_threshold
         })
 
     @staticmethod
@@ -1745,15 +1916,18 @@ class MetatubeSource(_PluginBase):
         return all_keywords
 
     def _get_exclude_keywords(self) -> List[str]:
-        """获取排除关键字列表（内置 + 自定义）"""
+        """获取排除关键字列表（内置 + 自定义），过滤短关键字避免误匹配"""
         exclude_keywords = []
 
-        # 添加内置排除关键字
-        exclude_keywords.extend(self.BUILT_IN_EXCLUDE_KEYWORDS)
+        # 添加内置排除关键字（过滤单字母和双字母关键字）
+        for kw in self.BUILT_IN_EXCLUDE_KEYWORDS:
+            if len(kw) > 2:  # 仅保留长度 > 2 的关键字，避免误匹配 JAV 番号
+                exclude_keywords.append(kw)
 
-        # 添加自定义排除关键字
+        # 添加自定义排除关键字（同样过滤短关键字）
         if self._exclude_keywords:
             custom_list = [kw.strip() for kw in self._exclude_keywords.split(',') if kw.strip()]
+            custom_list = [kw for kw in custom_list if len(kw) > 2]  # 过滤短关键字
             exclude_keywords.extend(custom_list)
 
         # 标准化（非严格模式转大写）
@@ -2866,6 +3040,14 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
+        # Step 0: 检查文件大小（如果启用）
+        if self._skip_small_files:
+            file_size_mb = self._get_file_size_mb(meta, kwargs)
+            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
+                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过识别: {meta.name}")
+                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
+                return None  # 返回 None，让系统使用默认识别
+
         # Step 1: 获取标题用于关键词分类检测
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
 
@@ -2986,6 +3168,14 @@ class MetatubeSource(_PluginBase):
 
         if not meta:
             return None
+
+        # Step 0: 检查文件大小（如果启用）
+        if self._skip_small_files:
+            file_size_mb = self._get_file_size_mb(meta, kwargs)
+            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
+                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过异步识别: {meta.name}")
+                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
+                return None  # 返回 None，让系统使用默认识别
 
         # Step 1: 获取标题
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""

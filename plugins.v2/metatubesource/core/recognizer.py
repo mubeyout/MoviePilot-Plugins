@@ -47,11 +47,36 @@ class MediaRecognizer:
         if not title:
             return None
 
-        # 清理标题
-        title = title.upper().strip()
-        title = re.sub(r'\[.*?\]', ' ', title)
-        title = re.sub(r'\(.*?\)', ' ', title)
+        # 清理标题 - 移除直播平台内容
+        live_platforms = [
+            r'stripchat', r'chaturbate', r'bongacams',
+            r'美少女直播', r'台湾uu', r'台湾UU',
+            r'裸聊', r'直播间', r'户外露出',
+            r'信誉保证', r'服务全球', r'注册送',
+            r'直播', r'LIVE', r'live show', r'cam girl'
+        ]
+        title_lower = title.lower()
+        for platform in live_platforms:
+            if platform in title_lower:
+                # 这是直播内容，不提取番号
+                return None
+
+        # 清理标题 - 移除广告前缀
+        ad_prefixes = [
+            r'\d{3,}\.com@',  # 489155.com@
+            r'[a-zA-Z0-9\-]+\.(com|net|org|cn|tk|ml)@',
+            r'www\.[a-zA-Z0-9\-]+\.[a-z]+@',
+            r'\[.*?\]',  # 方括号内容
+            r'\(.*?\)',  # 圆括号内容
+        ]
+        for prefix in ad_prefixes:
+            title = re.sub(prefix, '', title, flags=re.IGNORECASE)
+
+        # 清理标题 - 移除 @ 符号及之后的内容
         title = re.sub(r'[@＠].*', '', title)
+
+        # 标准化处理
+        title = title.upper().strip()
 
         # 尝试匹配各种番号格式
         number_patterns = [
@@ -61,6 +86,10 @@ class MediaRecognizer:
             r'(HEYZO)[-_]?(\d{4})',
             # Tokyo Hot 系列
             r'([nNK]|K|KD)[-_]?(\d{4,5})',
+            # ZA 系列（新增）
+            r'(ZA)[-]?(\d{5})',
+            # SKY/RED 系列
+            r'(SKY|RED|S2M)[-]?(\d{3,4})',
             # 主流标准格式
             r'([A-Z]{2,10})[-_]?(\d{2,5})',
             # 素人/单体系列
@@ -70,8 +99,6 @@ class MediaRecognizer:
             # 网站系列
             r'(CARIB|CARIBPR|CARIBBEANCOM)[-_]?(\d{6})[-_]?(\d{3})',
             r'(\d{6})[_-](\d{3})',
-            r'(S2M|SKY|SKYHIGH)[-_]?(\d{3,4})',
-            r'(RED|REDHOT)[-_]?(\d{3})',
             # 数字编号系列
             r'(H\d{4})[-_]?(\d{3})',
             r'(C\d{4})[-_]?(\d{3})',
