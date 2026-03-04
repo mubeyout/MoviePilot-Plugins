@@ -34,13 +34,13 @@ MODULE_LABELS = {
 
 class ByteMuseServices(_PluginBase):
     # 插件名称
-    plugin_name = "ByteMuse探索服务"
+    plugin_name = "ByteMuse探索服务聚合"
     # 插件描述
-    plugin_desc = "基于 ByteMuse API 的探索数据源插件，提供演员、上新、推荐、榜单、厂牌、搜索等探索服务。（已优化媒体详情展示）"
+    plugin_desc = "基于 ByteMuse API 的探索数据源插件，提供演员、上新、推荐、榜单、厂牌、搜索等探索服务。"
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png"
     # 插件版本
-    plugin_version = "2.9.7"  # 更新版本号
+    plugin_version = "2.9.6"
     # 插件作者
     plugin_author = "Mubey"
     # 作者主页
@@ -505,85 +505,77 @@ class ByteMuseServices(_PluginBase):
                         mtype: MediaType = None,
                         **kwargs) -> Optional[MediaInfo]:
         """
-        识别媒体信息（智能处理 ByteMuse mediaid 点击）
-
-        采用混合模式：
-        1. 特殊场景（种子、演员、ThePornDB）必须拦截处理
-        2. ByteMuse 作品返回 None，使用默认流程以整合更多数据源
+        识别媒体信息（处理 ByteMuse mediaid 点击）
 
         :param meta: 识别的元数据
         :param mtype: 识别的媒体类型
         :return: 识别的媒体信息
         """
+        # 调试日志：打印所有接收到的参数
+        logger.info(f"recognize_media 被调用: meta={meta}, mtype={mtype}, kwargs keys={list(kwargs.keys())}")
+
         if not meta:
             logger.warning("recognize_media: meta 为空，返回 None")
             return None
 
         # 从 kwargs 中获取 mediaid 信息
         mediaid = kwargs.get("mediaid", "")
-        imdb_id = kwargs.get("imdb_id", "")
 
-        logger.info(f"recognize_media 被调用: mediaid={mediaid}, imdb_id={imdb_id}, meta.org_string={meta.org_string}")
+        logger.info(f"recognize_media: mediaid={mediaid}, meta.org_string={meta.org_string}")
 
-        # ========== 1. 特殊场景：种子下载 - 必须拦截 ==========
-        if mediaid and mediaid.startswith("bytemuse_torrent:"):
-            code = mediaid.split(":", 1)[1]
-            logger.info(f"recognize_media: 识别为种子下载")
-            return self._handle_torrent_download(code)
+        if not mediaid or mediaid.endswith(":"):
+            # 如果没有 mediaid 或 mediaid 为空（如 "bytemuse_search:"），尝试从 meta 中提取番号
+            title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
+            if not title:
+                logger.warning("recognize_media: 无法获取番号，meta 为空")
+                return None
 
-        # ========== 2. 特殊场景：演员点击 - 必须拦截 ==========
-        if mediaid and mediaid.startswith("bytemuse_actor:"):
-            code = mediaid.split(":", 1)[1]
-            logger.info(f"recognize_media: 识别为演员点击: {code}")
-            return self._fetch_actor_info(code)
+            # 检查是否是 ThePornDB 的 imdb_id 格式
+            imdb_id = kwargs.get("imdb_id", "")
+            if imdb_id and imdb_id.startswith("theporndb:"):
+                # 从 imdb_id 中提取番号
+                code = imdb_id.replace("theporndb:", "", 1)
+                logger.info(f"recognize_media: 从 imdb_id 识别 ThePornDB 番号: {code}")
+                return self._fetch_theporndb_detail(code)
 
-        # ========== 3. 特殊场景：ThePornDB JAV - 需要拦截（TMDB 没有数据）==========
-        if imdb_id and imdb_id.startswith("theporndb:"):
-            code = imdb_id.replace("theporndb:", "", 1)
-            logger.info(f"recognize_media: 从 imdb_id 识别 ThePornDB 番号: {code}")
-            return self._fetch_theporndb_detail(code)
+            # 检查是否是 ByteMuse 的 imdb_id 格式
+            if imdb_id and imdb_id.startswith("bytemuse:"):
+                # 从 imdb_id 中提取番号
+                code = imdb_id.replace("bytemuse:", "", 1)
+                logger.info(f"recognize_media: 从 imdb_id 识别 ByteMuse 番号: {code}")
+                return self._fetch_bytemuse_detail(code)
 
-        # ========== 4. 检查是否是 ByteMuse 的 imdb_id 格式 ==========
-        if imdb_id and imdb_id.startswith("bytemuse:"):
-            code = imdb_id.replace("bytemuse:", "", 1)
-            logger.info(f"recognize_media: 从 imdb_id 识别 ByteMuse 番号: {code}")
-            return self._fetch_bytemuse_detail(code)
-
-        # ========== 5. ByteMuse 探索点击 - 返回 None 使用默认流程 ==========
-        # 这样可以整合 TMDB/Douban 等数据源，获得更完整的信息
-        if mediaid and mediaid.startswith("bytemuse_"):
-            logger.info(f"ByteMuse 探索点击使用默认识别流程: mediaid={mediaid}")
-            return None  # 让 MoviePilot 使用默认流程
-
-        # ========== 6. 其他情况：尝试从 meta 中提取番号 ==========
-        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
-        if not title:
-            logger.warning("recognize_media: 无法获取番号，meta 为空")
-            return None
-
-        # 如果标题看起来像番号，尝试从 ByteMuse 获取详情
-        if self._is_jav_number(title):
-            logger.info(f"recognize_media: 检测到番号格式，从 ByteMuse 搜索: {title}")
+            # 使用标题作为番号进行搜索（默认使用 ByteMuse）
+            logger.info(f"recognize_media: 使用标题作为番号搜索: {title}")
             return self._fetch_bytemuse_detail(title)
-        else:
-            # 不是番号格式，使用默认流程
-            logger.info(f"recognize_media: 非番号格式，使用默认识别流程: {title}")
-            return None
 
-    def _is_jav_number(self, text: str) -> bool:
-        """
-        检测文本是否像 JAV 番号格式
+        # 解析 mediaid (格式: bytemuse_xxx:code 或 theporndb_xxx:code)
+        if ":" in mediaid:
+            prefix, code = mediaid.split(":", 1)
+            logger.info(f"recognize_media: 解析 mediaid, prefix={prefix}, code={code}")
 
-        :param text: 待检测文本
-        :return: 是否像番号
-        """
-        if not text:
-            return False
+            # 检查是否是种子点击
+            if prefix == "bytemuse_torrent":
+                # 种子点击：触发下载
+                logger.info(f"recognize_media: 识别为种子下载")
+                return self._handle_torrent_download(code)
+            # 检查是否是演员点击
+            elif prefix == "bytemuse_actor":
+                # 演员点击：返回演员信息（用于显示演员作品列表）
+                logger.info(f"recognize_media: 识别为演员点击: {code}")
+                return self._fetch_actor_info(code)
+            # 检查是否是 ThePornDB JAV
+            elif prefix == "theporndb_jav":
+                # ThePornDB JAV 点击：获取详情
+                logger.info(f"recognize_media: 识别为 ThePornDB JAV: {code}")
+                return self._fetch_theporndb_detail(code)
+            # 其他 ByteMuse 前缀
+            elif prefix.startswith("bytemuse_"):
+                logger.info(f"recognize_media: 识别为 ByteMuse 前缀: {prefix}, 番号: {code}")
+                return self._fetch_bytemuse_detail(code)
 
-        import re
-        # JAV 番号常见格式：字母-数字，如 SSIS-123, ABC-123
-        pattern = r'^[A-Z]{2,6}-?\d{3,5}$'
-        return bool(re.match(pattern, text.strip().upper()))
+        logger.warning(f"recognize_media: 无法处理的 mediaid 格式: {mediaid}")
+        return None
 
     def _handle_torrent_download(self, magnet_b64: str) -> Optional[MediaInfo]:
         """
@@ -720,7 +712,7 @@ class ByteMuseServices(_PluginBase):
 
     def _movie_to_media(self, movie) -> MediaInfo:
         """
-        将 ByteMuseMovie 转换为 MediaInfo（增强版）
+        将 ByteMuseMovie 转换为 MediaInfo
 
         :param movie: ByteMuseMovie 对象
         :return: MediaInfo 对象
@@ -734,88 +726,29 @@ class ByteMuseServices(_PluginBase):
             else:
                 return MediaInfo()
 
-        # ========== 1. 提取演员信息 ==========
-        actor_names = []
-        if movie.actors:
-            actor_names = [actor.name for actor in movie.actors if actor.name]
-        elif movie.casts:
-            actor_names = [name.strip() for name in movie.casts.split(',') if name.strip()]
+        # 处理标题 - 只显示番号
+        title = movie.code or movie.title or ""
 
-        # ========== 2. 提取标签/类型信息 ==========
-        genres = []
-        if movie.genres:
-            if isinstance(movie.genres, str):
-                genres = [g.strip() for g in movie.genres.split(',') if g.strip()]
-            elif isinstance(movie.genres, list):
-                genres = movie.genres
-
-        # ========== 3. 提取导演信息 ==========
-        directors = []
-        if movie.director:
-            directors = [{"name": movie.director}]
-
-        # ========== 4. 构建标题（优先显示标题，番号作为副标题）==========
-        display_title = movie.title or movie.cn_title or movie.code or ""
-
-        # ========== 5. 确保 media_id 永远不为空 ==========
+        # 确保 media_id 永远不为空
         if movie.code:
             media_id = movie.code
         elif movie.id:
             media_id = f"bytemuse_{movie.id}"
         else:
-            media_id = display_title or f"unknown_{id(movie)}"
+            media_id = title or f"unknown_{id(movie)}"
 
-        # ========== 6. 提取年份 ==========
-        year = None
-        if movie.release_date:
-            try:
-                year = movie.release_date[:4]
-            except (IndexError, TypeError):
-                pass
-
-        # ========== 7. 提取厂牌/发行商 ==========
-        studio = movie.studio or movie.publisher or ""
-
-        # ========== 8. 构建 MediaInfo ==========
-        mediainfo = MediaInfo(
+        return MediaInfo(
             type="电影",
-            title=display_title,  # 显示标题
+            title=title,
             mediaid_prefix="bytemuse",
             media_id=media_id,
-            imdb_id=f"bytemuse:{movie.code}" if movie.code else f"bytemuse:{media_id}",
+            imdb_id=f"bytemuse:{movie.code}" if movie.code else f"bytemuse:{media_id}",  # 用于订阅识别
             poster_path=movie.poster_url or movie.cover_url or movie.thumb_url or "",
             vote_average=movie.score,
-            year=year,
-            overview=movie.summary or f"番号: {movie.code}",  # 添加番号到简介
-            studio=studio,
-            directors=directors,  # ✅ 添加导演
-            actors=actor_names,   # ✅ 添加演员
-            genres=genres,        # ✅ 添加标签
+            year=movie.release_date[:4] if movie.release_date else None,
+            overview=movie.summary or "",
+            studio=movie.studio or movie.publisher or "",
         )
-
-        # ========== 9. 添加额外信息（使用属性赋值）==========
-        if actor_names:
-            mediainfo.actor = [{"name": name} for name in actor_names]
-
-        if movie.series:
-            mediainfo.series = movie.series
-
-        if movie.label:
-            mediainfo.label = movie.label
-
-        # 时长
-        if movie.runtime:
-            mediainfo.runtime = movie.runtime
-        elif movie.duration:
-            mediainfo.runtime = movie.duration // 60  # 转换为分钟
-
-        # 预览图
-        if movie.preview_url:
-            mediainfo.backdrop_path = movie.preview_url
-        if movie.thumb_url:
-            mediainfo.thumb_path = movie.thumb_url
-
-        return mediainfo
 
     def _fetch_theporndb_detail(self, code: str) -> Optional[MediaInfo]:
         """
