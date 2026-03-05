@@ -55,10 +55,17 @@ def actors(
 
 
 def _actor_to_media(actor_data: Dict[str, Any]) -> MediaInfo:
-    """将演员数据转换为 MediaInfo"""
+    """
+    将演员数据转换为 MediaInfo（修复版）
+
+    参考 IMDb 插件的 title_to_mediainfo() 实现
+    """
     name = actor_data.get("name", "")
     if isinstance(name, list):
         name = name[0] if name else ""
+
+    # 使用演员名作为唯一ID（稳定且有意义）
+    actor_id = name
 
     # API 返回的图片字段是 photo
     poster_path = (actor_data.get("photo", "") or
@@ -69,10 +76,13 @@ def _actor_to_media(actor_data: Dict[str, Any]) -> MediaInfo:
     return MediaInfo(
         type="电视剧",
         title=name,
-        mediaid_prefix="bytemuse_actor",
-        media_id=str(hash(name)),
+        mediaid_prefix="bytemuse_actor",          # ← 添加前缀
+        media_id=actor_id,                        # ← 使用演员名作为ID
+        imdb_id=f"bytemuse_actor:{actor_id}",     # ← 设置 imdb_id
         poster_path=poster_path,
         vote_average=actor_data.get("score"),
+        overview=f"点击查看 {name} 的作品列表",    # ← 添加说明
+        year=None,  # 演员没有年份
     )
 
 

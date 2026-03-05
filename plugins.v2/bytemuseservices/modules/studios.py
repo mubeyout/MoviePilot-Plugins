@@ -112,7 +112,7 @@ def _item_to_media(item: Dict[str, Any], studio: str = None) -> MediaInfo:
         title=title,
         mediaid_prefix="bytemuse_studio",
         media_id=media_id,
-        imdb_id=f"bytemuse:{external_id}" if external_id else f"bytemuse:{media_id}",  # 用于订阅识别
+        imdb_id=f"bytemuse_studio:{external_id}" if external_id else f"bytemuse_studio:{media_id}",  # 用于订阅识别
         poster_path=poster_url,
         vote_average=item.get("score"),
         year=item.get("date", "")[:4] if item.get("date") else None,
@@ -265,7 +265,7 @@ def discover_source(master_plugin, event_data):
     """注册厂牌探索源"""
     studios_source = DiscoverMediaSource(
         name="厂牌",
-        mediaid_prefix="bytemuse_studios",
+        mediaid_prefix="bytemuse_studio",
         api_path=f"plugin/ByteMuseServices/bytemuse_studios?apikey={settings.API_TOKEN}",
         filter_params={
             "studio": "s1",

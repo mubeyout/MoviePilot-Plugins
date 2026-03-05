@@ -58,9 +58,9 @@ def _movie_to_media(movie: ByteMuseMovie) -> MediaInfo:
     return MediaInfo(
         type="电影",
         title=title,
-        mediaid_prefix="bytemuse",
+        mediaid_prefix="bytemuse_new",
         media_id=media_id,
-        imdb_id=f"bytemuse:{movie.code}" if movie.code else f"bytemuse:{media_id}",  # 用于订阅识别
+        imdb_id=f"bytemuse_new:{movie.code}" if movie.code else f"bytemuse_new:{media_id}",  # 用于订阅识别
         poster_path=movie.poster_url or movie.cover_url or movie.thumb_url or "",
         vote_average=movie.score,
         year=movie.release_date[:4] if movie.release_date else None,
