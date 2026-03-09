@@ -600,41 +600,54 @@ class Jackett(_PluginBase):
     def _register_jackett_site(self):
         """
         将 Jackett 注册为 MoviePilot 站点
-        使用虚拟索引器配置，实际搜索由插件 API 处理
+        使用标准域名格式，通过 MoviePilot 验证
         """
         try:
-            # 创建一个虚拟的索引器配置
-            # 这个配置不会被实际使用，因为我们会通过事件拦截搜索
+            # 使用标准域名格式（避免验证失败）
+            # MoviePilot 只接受标准域名格式，不接受 IP:PORT 或 localhost
+            domain = "jackett.all"
+
+            # 创建索引器配置
             indexer_config = {
                 "id": "jackett",
                 "name": "Jackett",
-                "domain": "http://jackett.local",
+                "domain": domain,
                 "encoding": "UTF-8",
                 "public": True,
                 "enabled": True,
                 "search": {
-                    "paths": [
-                        {
-                            "path": "?q={keyword}",
-                            "method": "get"
-                        }
-                    ]
+                    "url": f"{self._jackett_url}/api/v2.0/indexers/all/results/torznab/api",
+                    "method": "GET",
+                    "params": {
+                        "apikey": self._jackett_api_key,
+                        "q": "{keyword}"
+                    }
                 },
+                "parser": "json",
                 "torrents": {
                     "list": {
-                        "selector": "items"
+                        "selector": "channel.item"
                     },
                     "fields": {
                         "title": {"selector": "title"},
-                        "download": {"selector": "link"},
+                        "description": {"selector": "description"},
+                        "link": {"selector": "link"},
                         "size": {"selector": "size"},
-                        "seeders": {"selector": "seeders"}
+                        "seeders": {"selector": "seeders"},
+                        "leechers": {"selector": "leechers"},
+                        "date": {"selector": "pubDate"}
                     }
                 }
             }
 
-            SitesHelper().add_indexer("jackett.local", indexer_config)
-            logger.info("Jackett 站点注册成功")
+            # 注册站点
+            SitesHelper().add_indexer(domain, indexer_config)
+            logger.info(f"Jackett 站点注册成功: {domain}")
+            logger.info(f"Jackett 服务地址: {self._jackett_url}")
 
         except Exception as e:
             logger.error(f"注册 Jackett 站点失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            import traceback
+            logger.error(traceback.format_exc())

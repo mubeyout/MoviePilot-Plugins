@@ -83,11 +83,33 @@ class JackettAPI:
         :return: 连接是否成功
         """
         try:
-            # 尝试获取索引器列表
+            # 方法1：尝试访问 Jackett UI（最基础的连接测试）
+            logger.info("测试连接: 尝试访问 Jackett UI...")
+            ui_url = f"{self.url}/UI/Dashboard"
+            try:
+                response = requests.get(ui_url, timeout=5)
+                if response.status_code == 200:
+                    logger.info("✓ Jackett UI 访问成功")
+                    return True
+            except Exception as e:
+                logger.warning(f"Jackett UI 访问失败: {e}")
+
+            # 方法2：尝试获取索引器列表
             logger.info("测试连接: 尝试获取索引器列表...")
-            indexers = self.get_indexers()
-            logger.info(f"获取到 {len(indexers)} 个索引器")
-            return len(indexers) > 0
+            try:
+                indexers = self.get_indexers()
+                if indexers and len(indexers) > 0:
+                    logger.info(f"✓ 获取到 {len(indexers)} 个索引器")
+                    return True
+                else:
+                    logger.warning("未获取到索引器，可能未配置任何索引器")
+                    return False
+            except Exception as e:
+                logger.error(f"获取索引器列表失败: {e}")
+
+            # 如果都失败，返回 False
+            return False
+
         except Exception as e:
             logger.error(f"连接测试异常: {e}")
             return False

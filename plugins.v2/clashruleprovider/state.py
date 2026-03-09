@@ -63,11 +63,32 @@ class PluginState:
             return False, error_msg
 
     def clear_corrupted_cache(self):
-        """清除可能损坏的缓存"""
+        """清除可能损坏的缓存和数据库数据"""
         try:
-            self.cache.clear(region=self.cache_region)
             from app.log import logger
+            # 清除缓存
+            self.cache.clear(region=self.cache_region)
             logger.info(f"Cleared cache for region: {self.cache_region}")
+
+            # 检查并修复损坏的订阅信息数据
+            try:
+                sub_info_data = self.plugin_data.get_data(self.plugin_id, DataKey.SUB_INFO)
+                if sub_info_data is not None:
+                    # 检查数据类型是否正确
+                    if not isinstance(sub_info_data, dict):
+                        logger.warning(f"发现损坏的订阅信息数据 (类型: {type(sub_info_data)})")
+                        # 通过保存空数据来覆盖损坏的数据
+                        from .models.api import SubscriptionsInfo
+                        empty_sub_info = SubscriptionsInfo()
+                        self.plugin_data.save(
+                            self.plugin_id,
+                            DataKey.SUB_INFO,
+                            empty_sub_info.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        )
+                        logger.info("已重置损坏的订阅信息数据为空对象")
+            except Exception as check_err:
+                logger.error(f"检查订阅信息数据时出错: {check_err}")
+
         except Exception as e:
             from app.log import logger
             logger.error(f"Failed to clear cache: {e}")
@@ -94,7 +115,37 @@ class PluginState:
                 # 数据验证失败,记录错误并返回默认值
                 from app.log import logger
                 logger.error(f"Failed to validate {key} from database: {e}")
-                logger.error(f"Data: {str(data)[:500]}...")
+                logger.error(f"Data type: {type(data)}, Data: {str(data)[:500]}...")
+
+                # 特殊处理 SubscriptionsInfo 的错误数据格式
+                if key == DataKey.SUB_INFO:
+                    logger.warning(f"检测到 SubscriptionsInfo 数据格式错误,尝试修复...")
+                    try:
+                        # 如果数据是列表或字符串,创建空的 SubscriptionsInfo
+                        if isinstance(data, (list, str)):
+                            val = SubscriptionsInfo()
+                            logger.info("已创建空的 SubscriptionsInfo")
+                        # 如果数据是字典,尝试创建 SubscriptionsInfo
+                        elif isinstance(data, dict):
+                            val = SubscriptionsInfo(root=data)
+                            logger.info("已从字典创建 SubscriptionsInfo")
+                        else:
+                            val = SubscriptionsInfo()
+                            logger.warning(f"未知的数据格式 {type(data)},使用空 SubscriptionsInfo")
+
+                        # 保存修复后的值
+                        try:
+                            self.plugin_data.save(self.plugin_id, key,
+                                                  adapter.dump_python(val, mode="json", by_alias=True, exclude_none=True))
+                            logger.info("已保存修复后的 SubscriptionsInfo")
+                        except Exception as save_err:
+                            logger.error(f"Failed to save fixed value for {key}: {save_err}")
+                        self.cache.set(key, val, region=self.cache_region)
+                        return val
+                    except Exception as fix_err:
+                        logger.error(f"修复 SubscriptionsInfo 失败: {fix_err}")
+                        val = SubscriptionsInfo()
+
                 if default_factory:
                     val = default_factory()
                     # 保存修复后的默认值

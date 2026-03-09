@@ -153,7 +153,17 @@ class ClashRuleProvider(_PluginBase):
             logger.error(f"初始化订阅信息失败: {e}")
             # 使用新的订阅信息
             from .models.api import SubscriptionsInfo
-            self.state.subscription_info = SubscriptionsInfo()
+            try:
+                # 尝试创建空的新订阅信息
+                new_sub_info = SubscriptionsInfo()
+                new_sub_info.update(self.state.config.sub_links)
+                self.state.subscription_info = new_sub_info
+                logger.info("已创建新的订阅信息对象")
+            except Exception as retry_err:
+                logger.error(f"创建新订阅信息失败: {retry_err}")
+                # 最后的尝试:直接设置一个空字典
+                self.state._set_val("subscription_info", SubscriptionsInfo())
+                logger.warning("已强制重置订阅信息为空对象")
 
         # sub_configs loaded from DB. Filter by current sub_links.
         try:
