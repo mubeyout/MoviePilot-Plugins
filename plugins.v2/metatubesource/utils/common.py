@@ -5,6 +5,7 @@ Metatube 工具函数
 import re
 from typing import Optional, List, Dict, Any
 from ..models.base import MediaInfo, NamingTemplate
+from .watermark_remover import EnhancedWatermarkRemover
 
 class NumberExtractor:
     """番号提取器"""
@@ -15,13 +16,19 @@ class NumberExtractor:
         if not filename:
             return None
 
-        # 清理文件名
-        name = filename.upper().strip()
+        # 使用增强的水印移除器清理文件名
+        cleaned, watermark = EnhancedWatermarkRemover.clean_filename(filename)
 
-        # 移除常见的无关前缀和后缀
-        name = re.sub(r'\[.*?\]', ' ', name)
-        name = re.sub(r'\(.*?\)', ' ', name)
-        name = re.sub(r'[@＠].*', '', name)
+        # 如果清理后是网站编号，返回 None
+        if EnhancedWatermarkRemover.is_site_id(cleaned):
+            return None
+
+        # 如果清理后已经是有效番号，直接返回
+        if EnhancedWatermarkRemover.is_valid_adult_number(cleaned):
+            return cleaned
+
+        # 否则尝试从清理后的文本中提取番号
+        name = cleaned.upper().strip()
 
         # 番号正则表达式列表（按优先级排序）
         number_patterns = [
