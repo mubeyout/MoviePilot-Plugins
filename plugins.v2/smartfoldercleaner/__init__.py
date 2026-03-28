@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import List, Dict, Tuple, Any, Set
 
+from apscheduler.triggers.cron import CronTrigger
 from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.types import NotificationType
@@ -845,13 +846,17 @@ class SmartFolderCleaner(_PluginBase):
         """注册定时服务"""
         if not self._enabled or not self._cron:
             return []
-        return [{
-            "id": "SmartFolderCleaner",
-            "name": "智能文件夹清理",
-            "trigger": "cron",
-            "func": self.clean_folders,
-            "kwargs": {"cron": self._cron}
-        }]
+        try:
+            return [{
+                "id": "SmartFolderCleaner",
+                "name": "智能文件夹清理",
+                "trigger": CronTrigger.from_crontab(self._cron),
+                "func": self.clean_folders,
+                "kwargs": {}
+            }]
+        except Exception as e:
+            logger.error(f"定时任务配置错误: {e}")
+            return []
 
     def get_api(self) -> List[Dict[str, Any]]:
         """注册API接口"""

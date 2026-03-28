@@ -1,4 +1,17 @@
 {
+    "customindexerv2": {
+        "name": "自定义索引站点V2",
+        "description": "可视化配置索引站点，步骤式向导 + 预设模板 + 自动编码，轻松添加自定义索引器。支持通用公开站、NexusPHP私站、RSS站等多种模板。",
+        "labels": "工具,索引",
+        "version": "1.0.0",
+        "icon": "spider.png",
+        "author": "Mubey",
+        "level": 2,
+        "v2": true,
+        "history": {
+            "v1.0.0": "初始版本：可视化配置向导，预设模板，自动Base64编码，批量导入导出"
+        }
+    },
     "alist2strmPro": {
         "name": "Alist2StrmPro",
         "description": "从alist生成音视频strm，支持视频、音频、其他文件（字幕、图片、NFO等）分类处理。",

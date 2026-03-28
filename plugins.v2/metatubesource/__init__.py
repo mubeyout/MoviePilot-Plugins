@@ -115,9 +115,9 @@ class MetatubeSource(_PluginBase):
     ]
 
     # 中文系核心关键词（主流传媒品牌）
-    # 优化: 移除单字关键字(屄,逼,屌,操,干)和通用词汇(原创,独家,首发,精品,高清,超清,蓝光)
+    # 优化: 移除过于宽泛的关键字，提高识别精度（v1.1.1）
     BUILT_IN_CHINESE_KEYWORDS = [
-        # === 主流传媒品牌 ===
+        # === 主流传媒品牌（高优先级，强特征） ===
         "MD", "MD-", "MDCN", "麻豆", "麻豆傳媒", "MADOU",
         "MX", "MX-", "精东", "精東傳媒",
         "TM", "TM-", "天美", "天美傳媒",
@@ -125,27 +125,32 @@ class MetatubeSource(_PluginBase):
         "91制片", "九一制片",
         "TW", "TW-", "台湾", "台灣傳媒",
 
-        # === 网红/探花系列 ===
-        "约炮", "网红", "探花", "小宝寻花",
-        "李寻花", "沈先生",
+        # === 探花系列（特定成人内容） ===
+        "约炮", "探花", "小宝寻花", "李寻花", "沈先生",
+        # 移除 "网红" - 过于宽泛，普通网红视频很多
 
-        # === 成人内容标识 ===
-        "传媒", "傳媒", "国产", "自拍", "偷拍", "露脸",
+        # === 成人内容标识（强特征） ===
+        "传媒", "傳媒", "自拍", "偷拍", "露脸",
         "成人", "色情", "黄色", "情色",
-        "做爱", "性交",
-        "口交", "肛交",
+        "做爱", "性交", "口交", "肛交",
+        # 移除 "国产" - 过于宽泛
 
-        # === 体型特征 ===
+        # === 体型特征（保留，强特征） ===
         "巨乳", "大胸", "爆乳", "翘臀",
         "丝袜", "美腿", "黑丝", "裸体", "全裸",
 
-        # === 职业/身份 ===
-        "空姐", "护士", "老师", "学生", "女仆",
-        "少妇", "人妻", "熟女", "模特", "主播",
+        # === 职业/身份（优化 - 移除通用词） ===
+        "空姐", "护士", "女仆",  # 保留特定角色
+        "少妇", "人妻", "熟女",  # 保留成人特定
+        # 移除 "老师", "学生", "模特", "主播" - 过于宽泛
 
-        # === 视频特征 (移除画质通用词) ===
+        # === 视频特征 ===
         "无码", "有码", "内射", "颜射",
         "中文字幕",
+
+        # === 新增：组合特征（更精确的成人内容标识） ===
+        "福利视频", "大秀", "私拍", "流出",
+        "门事件", "艳照", "不雅视频",
     ]
 
     # 其他核心关键词（通用特征）
@@ -284,6 +289,31 @@ class MetatubeSource(_PluginBase):
         # === 文件质量标记 ===
         "HQ", "LQ", "HIGH", "LOW", "BEST",
         "GOOD", "BAD", "PROPER", "NUKE",
+
+        # ==================== 新增：非成人内容排除标识 ====================
+        # === 音乐演唱会标识 ===
+        "LIVE", "CONCERT", "ONEMAN", "TOUR", "FESTIVAL",
+        "演唱会", "音乐会", "现场表演", "演出", "LIVE-HOUSE",
+
+        # === 短剧/网剧标识 ===
+        "SKIT", "短剧", "网剧", "小剧场", "小视频",
+        "微电影", "短片", "SHORT-FILM", "MINI-DRAMA",
+
+        # === 综艺/访谈标识 ===
+        "VARIETY", "TALK-SHOW", "TALKSHOW",
+        "综艺", "访谈", "脱口秀", "TALK",
+
+        # === 歌曲/专辑标识 ===
+        "SONG", "SINGLE", "ALBUM", "MV", "MUSIC-VIDEO",
+        "歌曲", "单曲", "专辑", "音乐视频", "原声带", "OST",
+
+        # === 视频创作者标识 ===
+        "YOUTUBER", "UP主", "VLOG", "VLOGGER",
+        "视频博主", "自媒体",
+
+        # === 体育/游戏标识 ===
+        "E-SPORTS", "电子竞技", "游戏",
+        "HIGHLIGHTS", "集锦", "比赛", "MATCH",
     ]
 
     # ==================== 命名模板预设 ====================
@@ -1947,6 +1977,13 @@ class MetatubeSource(_PluginBase):
         if not title:
             return self.SUBCATEGORY_OTHER
 
+        # === 内容类型预检 ===
+        should_skip, skip_reason = self._should_skip_by_content_type(title)
+        if should_skip:
+            logger.debug(f"Metatube: 检测到{skip_reason}，跳过分类: {title}")
+            return self.SUBCATEGORY_SKIP
+        # === 内容类型预检结束 ===
+
         # 检查排除关键字
         exclude_keywords = self._get_exclude_keywords()
         if exclude_keywords:
@@ -2021,6 +2058,100 @@ class MetatubeSource(_PluginBase):
 
         return self.SUBCATEGORY_OTHER
 
+    def _detect_content_type(self, title: str) -> str:
+        """
+        检测内容类型，优先于关键字匹配
+
+        :param title: 标题文本
+        :return: 内容类型: music/drama/variety/unknown
+        """
+        if not title:
+            return "unknown"
+
+        title_upper = title.upper()
+        title_lower = title.lower()
+
+        # 1. 音乐/演唱会检测
+        music_indicators = [
+            # 演唱会标识
+            r'.*\bLIVE.*CONCERT\b.*',
+            r'.*\bONEMAN.*LIVE\b.*',
+            r'.*\bTOUR.*\d{4}\b.*',  # TOUR 2024
+            r'.*\bFESTIVAL\b.*',
+
+            # 音乐会相关中文
+            r'.*演唱会.*',
+            r'.*音乐会.*',
+            r'.*现场表演.*',
+            r'.*现场版.*',
+
+            # 歌曲格式
+            r'.*\bMV\b.*',
+            r'.*\bMUSIC\s+VIDEO\b.*',
+            r'.*\[.*?\]\s*LIVE\s*$',  # [歌名] LIVE
+
+            # 艺术家 - 演唱模式
+            r'.+演唱.*歌曲.*',
+            r'.+\s+-\s+.+\s+\(\d{4}\)$',  # 艺术家 - 歌名 (年份)
+        ]
+
+        for pattern in music_indicators:
+            if re.search(pattern, title_upper) or re.search(pattern, title):
+                return "music"
+
+        # 2. 短剧/网剧检测
+        drama_indicators = [
+            # SKIT 标识（最常见）
+            r'-\s*SKIT\s*$',
+            r'\s+SKIT\s*$',
+
+            # 集数格式
+            r'\(\d+\s*[集话部]\)',
+            r'第\s*\d+\s*[集话部]',
+            r'\s+EP\d+\s*$',
+            r'\s+E\d+\s*$',
+
+            # 短剧标识
+            r'.*短剧.*',
+            r'.*网剧.*',
+            r'.*小剧场.*',
+            r'.*微电影.*',
+
+            # 剧集特征
+            r'.*续集.*',
+            r'.*第.*季.*',
+        ]
+
+        for pattern in drama_indicators:
+            if re.search(pattern, title):
+                return "drama"
+
+        # 3. 综艺/访谈检测
+        if any(x in title_upper for x in ['VARIETY', 'TALK SHOW', 'TALKSHOW']):
+            return "variety"
+        if any(x in title for x in ['综艺', '访谈', '脱口秀']):
+            return "variety"
+
+        return "unknown"
+
+    def _should_skip_by_content_type(self, title: str) -> tuple:
+        """
+        根据内容类型判断是否应该跳过识别
+
+        :param title: 标题文本
+        :return: (是否跳过, 跳过原因)
+        """
+        content_type = self._detect_content_type(title)
+
+        if content_type == "music":
+            return True, "音乐内容"
+        if content_type == "drama":
+            return True, "短剧/网剧"
+        if content_type == "variety":
+            return True, "综艺节目"
+
+        return False, ""
+
     def _match_keywords(self, meta: MetaBase) -> bool:
         """
         检查元数据是否匹配关键字（优先级: 自定义 > 内置核心 > keywords.json文件）
@@ -2035,6 +2166,13 @@ class MetatubeSource(_PluginBase):
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
         if not title:
             return False
+
+        # === 内容类型预检 ===
+        should_skip, skip_reason = self._should_skip_by_content_type(title)
+        if should_skip:
+            logger.debug(f"Metatube: 检测到{skip_reason}，跳过关键字匹配: {title}")
+            return False
+        # === 内容类型预检结束 ===
 
         # 标准化标题
         if not self._strict_match:
