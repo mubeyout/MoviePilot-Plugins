@@ -38,7 +38,7 @@ class ClashRuleProvider(_PluginBase):
     # 插件版本
     plugin_version = "3.0.0"
     # 插件作者
-    plugin_author = "mubey"
+    plugin_author = "MUBEY"
     # 作者主页
     author_url = "https://github.com/mubeyout"
     # 插件配置项ID前缀
