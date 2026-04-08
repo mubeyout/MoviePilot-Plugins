@@ -397,6 +397,11 @@ class MetatubeSource(_PluginBase):
         from .utils.concurrency import RateLimiter
         self._rate_limiter = RateLimiter(interval=0.5)
 
+        # 识别去重缓存：避免短时间内重复识别同一项目
+        # {标题key: (结果状态, 时间戳)}
+        self._recognize_cache: Dict[str, Tuple[str, float]] = {}
+        self._recognize_cache_ttl = 3600  # 缓存有效期 1 小时（秒）
+
         plugin_instance: MetatubeSource = self
 
         def patched_recognize_media(chain_self, meta: MetaBase = None,
@@ -2069,7 +2074,6 @@ class MetatubeSource(_PluginBase):
             return "unknown"
 
         title_upper = title.upper()
-        title_lower = title.lower()
 
         # 1. 音乐/演唱会检测
         music_indicators = [
@@ -2099,14 +2103,14 @@ class MetatubeSource(_PluginBase):
             if re.search(pattern, title_upper) or re.search(pattern, title):
                 return "music"
 
-        # 2. 短剧/网剧检测
+        # 2. 短剧/网剧检测（支持全角括号）
         drama_indicators = [
-            # SKIT 标识（最常见）
-            r'-\s*SKIT\s*$',
-            r'\s+SKIT\s*$',
+            # SKIT 标识（最常见）— 不再要求在末尾，允许后面有标签
+            r'-\s*SKIT\b',
+            r'\bSKIT\b',
 
-            # 集数格式
-            r'\(\d+\s*[集话部]\)',
+            # 集数格式（同时支持半角和全角括号）
+            r'[（(]\d+\s*[集话部][）)]',
             r'第\s*\d+\s*[集话部]',
             r'\s+EP\d+\s*$',
             r'\s+E\d+\s*$',
@@ -3162,6 +3166,38 @@ class MetatubeSource(_PluginBase):
             logger.error(f"ThePornDB JAV: 异步识别异常 - {str(e)}")
             return None
 
+    def _check_recognize_cache(self, title: str) -> Optional[str]:
+        """
+        检查识别去重缓存
+
+        :param title: 标题
+        :return: 缓存的状态字符串（skip/none/fallback+分类），None 表示未缓存
+        """
+        if not title:
+            return None
+        cache_key = title.strip()
+        if cache_key in self._recognize_cache:
+            status, ts = self._recognize_cache[cache_key]
+            if (datetime.now().timestamp() - ts) < self._recognize_cache_ttl:
+                logger.debug(f"Metatube: 命中识别缓存，跳过重复识别: {cache_key[:50]} (状态: {status})")
+                return status
+            else:
+                del self._recognize_cache[cache_key]
+        return None
+
+    def _set_recognize_cache(self, title: str, status: str):
+        """设置识别缓存"""
+        if not title:
+            return
+        cache_key = title.strip()
+        self._recognize_cache[cache_key] = (status, datetime.now().timestamp())
+        # 清理过期缓存（每次写入时顺便清理，避免无限增长）
+        now = datetime.now().timestamp()
+        expired_keys = [k for k, (_, ts) in self._recognize_cache.items()
+                       if (now - ts) >= self._recognize_cache_ttl]
+        for k in expired_keys:
+            del self._recognize_cache[k]
+
     def recognize_media(self, meta: MetaBase = None,
                         mtype: MediaType = None,
                         **kwargs) -> Optional[MediaInfo]:
@@ -3177,6 +3213,18 @@ class MetatubeSource(_PluginBase):
 
         if not meta:
             return None
+
+        # 获取标题
+        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
+
+        # 去重检查：如果最近已识别过该项目，直接返回之前的结果
+        cached_status = self._check_recognize_cache(title)
+        if cached_status == "skip":
+            return None
+        elif cached_status is not None:
+            # 之前识别过（可能是 success 或 fallback），重新执行以返回 MediaInfo
+            # 但仍记录缓存命中日志
+            logger.debug(f"Metatube: 缓存命中（重新执行）: {title[:50]} (上次: {cached_status})")
 
         # Step 0: 检查文件大小（如果启用）
         if self._skip_small_files:
@@ -3197,6 +3245,7 @@ class MetatubeSource(_PluginBase):
         # Step 2.5: 如果匹配到排除关键字，直接跳过识别
         if detected_category == self.SUBCATEGORY_SKIP:
             logger.info(f"Metatube: 匹配到排除关键字，跳过识别，交由系统处理: {title}")
+            self._set_recognize_cache(title, "skip")
             return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
 
         # Step 3: 提取番号（根据分类使用不同规则）
@@ -3204,7 +3253,9 @@ class MetatubeSource(_PluginBase):
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
             # 使用原始标题作为番号兜底，走失败处理流程
-            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            self._set_recognize_cache(title, "none")
+            return result
 
         logger.info(f"Metatube: 正在识别番号 {number} (分类: {detected_category}) ...")
 
@@ -3260,7 +3311,9 @@ class MetatubeSource(_PluginBase):
             results = self._metatube_client.search(number, fallback=True)
             if not results:
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-                return self._handle_recognition_failure(number, title, "未找到匹配结果")
+                result = self._handle_recognition_failure(number, title, "未找到匹配结果")
+                self._set_recognize_cache(title, "none")
+                return result
 
             # 取第一个结果
             movie = results[0]
@@ -3281,7 +3334,7 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, mediainfo.title, "success",
                           f"来源: {movie.provider}", category=category)
             logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-
+            self._set_recognize_cache(title, "success")
             return mediainfo
 
         except Exception as e:
@@ -3289,7 +3342,9 @@ class MetatubeSource(_PluginBase):
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
             logger.error(f"Metatube: 识别异常 - {str(e)}")
             # 修复：使用 title 而不是 number 进行分类检测
-            return self._handle_recognition_failure(number, title, failure_msg)
+            result = self._handle_recognition_failure(number, title, failure_msg)
+            self._set_recognize_cache(title, "error")
+            return result
 
     async def async_recognize_media(self, meta: MetaBase = None,
                                     mtype: MediaType = None,
@@ -3322,9 +3377,15 @@ class MetatubeSource(_PluginBase):
         detected_category = self._detect_category_type(title)
         logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
 
+        # 去重检查
+        cached_status = self._check_recognize_cache(title)
+        if cached_status == "skip":
+            return None
+
         # Step 2.5: 如果匹配到排除关键字，直接跳过识别
         if detected_category == self.SUBCATEGORY_SKIP:
             logger.info(f"Metatube: 匹配到排除关键字，跳过异步识别，交由系统处理: {title}")
+            self._set_recognize_cache(title, "skip")
             return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
 
         # Step 3: 提取番号（根据分类使用不同规则）
@@ -3332,7 +3393,9 @@ class MetatubeSource(_PluginBase):
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
             # 使用原始标题作为番号兜底，走失败处理流程
-            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            self._set_recognize_cache(title, "none")
+            return result
 
         logger.info(f"Metatube: 正在异步识别番号 {number} ...")
 
@@ -3408,7 +3471,7 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, mediainfo.title, "success",
                           f"来源: {movie.provider}", category=category)
             logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-
+            self._set_recognize_cache(title, "success")
             return mediainfo
 
         except Exception as e:
@@ -3416,4 +3479,6 @@ class MetatubeSource(_PluginBase):
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
             # 修复：使用 title 而不是 number 进行分类检测
-            return self._handle_recognition_failure(number, title, failure_msg)
+            result = self._handle_recognition_failure(number, title, failure_msg)
+            self._set_recognize_cache(title, "error")
+            return result
