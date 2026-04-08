@@ -452,10 +452,7 @@ class ClashRuleProviderApi:
                         break
                     try:
                         data = await queue.get()
-                        yield f'event: {endpoint}
-data: {json.dumps(data)}
-
-'
+                        yield 'event: ' + endpoint + '\n' + 'data: ' + json.dumps(data) + '\n\n'
                     except asyncio.CancelledError:
                         break
             finally:

@@ -1,17 +1,4 @@
 {
-    "alist2strmPro": {
-        "name": "Alist2StrmPro",
-        "description": "从alist生成音视频strm，支持视频、音频、其他文件（字幕、图片、NFO等）分类处理。",
-        "labels": "整理",
-        "version": "2.0.0",
-        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Alist.png",
-        "author": "MUBEY",
-        "level": 1,
-        "v2": true,
-        "history": {
-            "v2.0.0": "初始版本，支持视频、音频、其他文件分类处理，生成.strm或下载到本地"
-        }
-    },
     "anistrm": {
         "name": "ANiStrm",
         "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持多种同步模式和季度文件夹模式。",
@@ -82,6 +69,19 @@
         "v2": true,
         "history": {
             "v2.1": "当前版本：支持智能文件夹清理，两种判定模式，自定义运行周期，立即运行功能"
+        }
+    },
+    "alist2strm": {
+        "name": "Alist2StrmPro",
+        "description": "从alist生成音视频strm，支持视频、音频、其他文件（字幕、图片、NFO等）分类处理。",
+        "labels": "整理",
+        "version": "2.0.0",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Alist.png",
+        "author": "MUBEY",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v2.0.0": "初始版本，支持视频、音频、其他文件分类处理，生成.strm或下载到本地"
         }
     }
 }
