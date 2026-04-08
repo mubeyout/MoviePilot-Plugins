@@ -36,11 +36,11 @@ class ClashRuleProvider(_PluginBase):
     # 插件图标
     plugin_icon = "Mihomo_Meta_A.png"
     # 插件版本
-    plugin_version = "2.1.2"
+    plugin_version = "3.0.0"
     # 插件作者
-    plugin_author = "wumode,mubey"
+    plugin_author = "MUBEY"
     # 作者主页
-    author_url = "https://github.com/wumode"
+    author_url = "https://github.com/mubeyout"
     # 插件配置项ID前缀
     plugin_config_prefix = "clashruleprovider_"
     # 加载顺序

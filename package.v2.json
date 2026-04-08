@@ -14,7 +14,7 @@
     },
     "anistrm": {
         "name": "ANiStrm",
-        "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持三种同步模式和季度文件夹模式。",
+        "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持多种同步模式和季度文件夹模式。",
         "labels": "整理",
         "version": "2.7.0",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/anistrm.png",
@@ -22,21 +22,34 @@
         "level": 2,
         "v2": true,
         "history": {
-            "v2.7.0": "重大更新：新增季度文件夹模式，支持自动季度识别和集数提取，智能重命名为标准媒体库格式",
-            "v2.6.0": "新增多视频格式支持（mp4/mkv/avi/mov/wmv/flv/webm/m4v/ts/rmvb）",
-            "v2.5.0": "修复关键Bug，新增get_anime_episodes方法获取番剧内所有视频文件",
+            "v2.7.0": "新增季度文件夹模式，支持自动季度识别和集数提取，智能重命名为标准媒体库格式",
+            "v2.6.0": "新增多视频格式支持",
             "v2.4.2": "初始版本，支持从 openani.an-i.workers.dev 获取番剧并创建 strm 文件"
+        }
+    },
+    "bytemusediscover": {
+        "name": "番号探索服务聚合",
+        "description": "基于 ByteMuse API 的探索数据源插件，整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源，支持番号搜索和热门榜单功能。",
+        "labels": "探索,识别",
+        "version": "2.9.6",
+        "icon": "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png",
+        "author": "Mubey",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v2.9.6": "整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
         }
     },
     "clashruleprovider": {
         "name": "Clash Rule Provider",
         "description": "随时为Clash添加一些额外的规则。",
         "labels": "代理,订阅",
-        "version": "2.1.2",
+        "version": "3.0.0",
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Mihomo_Meta_A.png",
         "author": "MUBEY",
         "level": 1,
         "history": {
+            "v3.0.0": "移除 sse_starlette 依赖，改用 starlette 内置 StreamingResponse，修复与新版 MoviePilot 的兼容性问题",
             "v2.1.2": "优化规则管理和订阅处理功能",
             "v2.1.1": "增强配置验证和错误处理",
             "v2.1.0": "数据升级和性能优化",
@@ -53,62 +66,22 @@
         "level": 1,
         "v2": true,
         "history": {
-            "v2.0.0": "重大更新：调整识别逻辑优先级，Metatube API 作为核心识别引擎，ThePornDB 和 ByteMuse 作为补充和备用方案；新增 ThePornDB JAV 两步法 API 支持；增强分类检测和关键字配置功能",
-            "v1.1.0": "重大更新：修复严重Bug，新增排除关键字功能（内置42个），JSON格式关键字配置，优化配置表单布局，增强分类检测逻辑",
-            "v1.0.1": "优化插件配置和识别功能",
+            "v2.0.0": "重大更新：调整识别逻辑优先级，Metatube API 作为核心识别引擎，ThePornDB 和 ByteMuse 作为补充和备用方案",
+            "v1.1.0": "新增排除关键字功能（内置42个），JSON格式关键字配置，优化配置表单布局",
             "v1.0.0": "初始版本，支持通过Metatube API识别番号媒体信息"
         }
     },
-    "bytemuseservices": {
-        "name": "番号探索服务聚合",
-        "description": "统一管理和配置番号媒体探索数据源插件，整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源，支持番号搜索和热门榜单功能。",
-        "labels": "探索,识别",
-        "version": "1.0.0",
-        "icon": "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png",
-        "author": "Mubey",
-        "level": 1,
-        "v2": true,
-        "history": {
-            "v1.0.0": "初始版本，整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
-        }
-    },
-    "emptyfoldercleaner": {
-        "name": "空文件夹清理",
-        "description": "智能删除符合自定义规则的空文件夹（非完全空），支持两种判定模式：按类型+大小判定（默认）、仅按大小判定。支持多路径监控、递归遍历、自定义文件类型和大小阈值（支持B/KB/MB/GB单位），从最深层开始安全删除。",
-        "labels": "工具,清理",
-        "version": "2.0.0",
-        "icon": "https://raw.githubusercontent.com/jxxghp/MoviePilot-Plugins/main/icons/delete.png",
-        "author": "rex.ruan",
-        "level": 1,
-        "v2": true,
-        "history": {
-            "v2.0.0": "初始版本V2：支持两种判定模式切换（按类型+大小判定、仅按大小判定），支持B/KB/MB/GB单位，支持多路径递归遍历，从最深层安全删除，完善配置界面和日志输出"
-        }
-    },
     "smartfoldercleaner": {
-        "name": "智能文件夹清理",
-        "description": "遍历指定目录，删除符合自定义'空文件夹'定义的目录（无有效文件的目录）。支持按类型+大小判定和仅按大小判定两种模式，支持自定义运行周期和立即运行功能，从最深层安全删除。",
+        "name": "SmartFolderCleaner",
+        "description": "遍历指定目录，删除符合自定义'空文件夹'定义的目录（无有效文件的目录）。支持按类型+大小判定和仅按大小判定两种模式，从最深层安全删除。",
         "labels": "工具,清理",
-        "version": "1.0",
+        "version": "2.1",
         "icon": "delete.png",
-        "author": "mubey",
+        "author": "MUBEY",
         "level": 2,
         "v2": true,
         "history": {
-            "v1.0": "初始版本：支持智能文件夹清理，两种判定模式，自定义运行周期，紧凑配置界面，立即运行功能"
-        }
-    },
-    "bytemuseservices": {
-        "name": "番号探索服务聚合",
-        "description": "基于 ByteMuse API 的探索数据源插件，提供演员、上新、推荐、榜单、厂牌、搜索等探索服务。整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源。",
-        "labels": "探索,识别",
-        "version": "2.9.6",
-        "icon": "https://raw.githubusercontent.com/KoWming/MoviePilot-Plugins/main/icons/ExploreServices.png",
-        "author": "Mubey",
-        "level": 1,
-        "v2": true,
-        "history": {
-            "v2.9.6": "当前版本：整合 Byte-Muse、ThePornDB、MetaTube 三大番号数据源，支持探索功能扩展"
+            "v2.1": "当前版本：支持智能文件夹清理，两种判定模式，自定义运行周期，立即运行功能"
         }
     }
 }

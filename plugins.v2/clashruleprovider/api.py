@@ -7,7 +7,7 @@ import websockets
 import yaml
 from fastapi import HTTPException, Request, status, Response, Body
 from fastapi.responses import PlainTextResponse
-from sse_starlette.sse import EventSourceResponse
+from starlette.responses import StreamingResponse
 
 from app import schemas
 from app.core.config import settings
@@ -452,10 +452,13 @@ class ClashRuleProviderApi:
                         break
                     try:
                         data = await queue.get()
-                        yield {'event': endpoint, 'data': json.dumps(data)}
+                        yield f'event: {endpoint}
+data: {json.dumps(data)}
+
+'
                     except asyncio.CancelledError:
                         break
             finally:
                 listener_task.cancel()
 
-        return EventSourceResponse(event_generator())
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
