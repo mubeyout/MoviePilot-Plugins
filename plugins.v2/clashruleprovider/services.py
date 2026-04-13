@@ -260,8 +260,15 @@ class ClashRuleProviderService:
 
     def delete_proxy_patch(self, name: str) -> tuple[bool, str]:
         patches = self.state.proxy_patch
-        if name in patches:
-            del patches.root[name]
+        # 兼容 patches 可能为 dict 或 DataPatch 的情况
+        if isinstance(patches, dict):
+            root = patches
+        elif hasattr(patches, 'root'):
+            root = patches.root
+        else:
+            return False, "补丁数据格式错误"
+        if name in root:
+            del root[name]
             self.state.proxy_patch = patches
             return True, "补丁已删除"
         return False, "补丁不存在"
@@ -446,7 +453,17 @@ class ClashRuleProviderService:
 
     def get_subscription_user_info(self) -> DataUsage:
         sub_info = DataUsage()
-        for info in self.state.subscription_info.root.values():
+        # 兼容 subscription_info 可能为 dict 或 SubscriptionsInfo 的情况
+        raw = self.state.subscription_info
+        if raw is None:
+            return sub_info
+        if isinstance(raw, dict):
+            items = raw.values()
+        elif hasattr(raw, 'root'):
+            items = raw.root.values()
+        else:
+            return sub_info
+        for info in items:
             sub_info.upload += info.upload
             sub_info.download += info.download
             sub_info.total += info.total
@@ -550,8 +567,15 @@ class ClashRuleProviderService:
 
     def delete_proxy_group_patch(self, name: str) -> tuple[bool, str]:
         patches = self.state.proxy_group_patch
-        if name in patches:
-            del patches.root[name]
+        # 兼容 patches 可能为 dict 或 DataPatch 的情况
+        if isinstance(patches, dict):
+            root = patches
+        elif hasattr(patches, 'root'):
+            root = patches.root
+        else:
+            return False, "补丁数据格式错误"
+        if name in root:
+            del root[name]
             self.state.proxy_group_patch = patches
             return True, "补丁已删除"
         return False, "补丁不存在"
