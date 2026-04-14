@@ -47,7 +47,7 @@ ProxyType = Union[
 
 
 class Proxy(RootModel[ProxyType]):
-    root: ProxyType = Field(..., discriminator="type")
+    root: ProxyType
 
     @property
     def name(self) -> str:
