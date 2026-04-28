@@ -500,7 +500,7 @@ class ByteMuseDiscover(_PluginBase):
         if not url:
             return {"error": "url parameter required"}, 400
 
-        from flask import Response as FlaskResponse
+        from starlette.responses import StreamingResponse
         try:
             # 根据域名设置对应的 Referer
             referer = None
@@ -526,9 +526,9 @@ class ByteMuseDiscover(_PluginBase):
             content = response.content
             content_type = response.headers.get("Content-Type", "image/jpeg")
 
-            return FlaskResponse(
-                content,
-                mimetype=content_type,
+            return StreamingResponse(
+                iter([content]),
+                media_type=content_type,
                 headers={
                     "Cache-Control": "public, max-age=86400",
                     "Access-Control-Allow-Origin": "*",
