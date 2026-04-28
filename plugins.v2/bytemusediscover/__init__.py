@@ -115,6 +115,21 @@ class ByteMuseDiscover(_PluginBase):
     # API 客户端
     _api_client: ByteMuseApiClient = None
 
+    @staticmethod
+    def _proxy_image_url(url: str) -> str:
+        """
+        将图片 URL 转换为 MoviePilot 图片代理路径
+        解决 DMM 等外部图片源防盗链问题
+        """
+        if not url:
+            return ""
+        if not url.startswith("http"):
+            return url
+        from urllib.parse import quote
+        # 使用 /api/v1/cache/image 代理（无域名白名单限制）
+        # 但需要服务端支持 DMM Referer，所以通过插件自身 API 代理
+        return f"/api/v1/plugin/ByteMuseDiscover/image?url={quote(url, safe='')}"
+
     def init_plugin(self, config: dict = None):
         if config:
             self._enabled = config.get("enabled", False)
@@ -159,6 +174,13 @@ class ByteMuseDiscover(_PluginBase):
                 "methods": ["GET"],
                 "summary": "ByteMuse媒体详情",
                 "description": "获取ByteMuse媒体详情信息",
+            },
+            {
+                "path": "/image",
+                "endpoint": self.proxy_image,
+                "methods": ["GET"],
+                "summary": "图片代理",
+                "description": "代理DMM等外部图片，解决防盗链",
             }
         ]
 
@@ -471,6 +493,51 @@ class ByteMuseDiscover(_PluginBase):
     def get_page(self) -> List[dict]:
         pass
 
+    def proxy_image(self, url: str = ""):
+        """
+        图片代理端点 - 为 DMM 等外部图片源添加 Referer 头
+        """
+        if not url:
+            return {"error": "url parameter required"}, 400
+
+        from flask import Response as FlaskResponse
+        try:
+            # 根据域名设置对应的 Referer
+            referer = None
+            if "dmm.co.jp" in url or "awsimgsrc.dmm.co.jp" in url:
+                referer = "https://www.dmm.co.jp/"
+            elif "javbus.com" in url:
+                referer = "https://www.javbus.com/"
+
+            headers = self._api_client.DEFAULT_HEADERS.copy() if self._api_client else {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            if referer:
+                headers["Referer"] = referer
+
+            response = RequestUtils(
+                timeout=15,
+                headers=headers,
+            ).get_res(url=url)
+
+            if response is None or response.status_code != 200:
+                return {"error": "failed to fetch image"}, 502
+
+            content = response.content
+            content_type = response.headers.get("Content-Type", "image/jpeg")
+
+            return FlaskResponse(
+                content,
+                mimetype=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Allow-Origin": "*",
+                }
+            )
+        except Exception as e:
+            logger.error(f"图片代理失败: {str(e)}")
+            return {"error": str(e)}, 500
+
     def bytemuse_discover(
         self,
         discover_type: str = "new_releases",
@@ -511,12 +578,15 @@ class ByteMuseDiscover(_PluginBase):
                 # 评分
                 vote_average = movie_info.get("score")
 
-                # 海报 - 尝试所有可能的图片字段
-                poster_path = (movie_info.get("poster_url") or
+                # 海报 - ByteMuse API 返回字段为 poster/banner（非 poster_url/cover_url）
+                raw_poster = (movie_info.get("poster") or
+                              movie_info.get("poster_url") or
+                              movie_info.get("banner") or
                               movie_info.get("cover_url") or
                               movie_info.get("thumb_url") or
-                              movie_info.get("banner") or
                               movie_info.get("preview_url") or "")
+                # 通过 MoviePilot 图片代理，解决 DMM 防盗链问题
+                poster_path = self._proxy_image_url(raw_poster) if raw_poster else ""
 
                 # 调试：记录图片 URL
                 if poster_path:
@@ -811,12 +881,15 @@ class ByteMuseDiscover(_PluginBase):
             # 评分
             vote_average = movie_info.get("score")
 
-            # 海报
-            poster_path = (movie_info.get("poster_url") or
+            # 海报 - ByteMuse API 返回字段为 poster/banner
+            raw_poster = (movie_info.get("poster") or
+                          movie_info.get("poster_url") or
+                          movie_info.get("banner") or
                           movie_info.get("cover_url") or
                           movie_info.get("thumb_url") or
-                          movie_info.get("banner") or
                           movie_info.get("preview_url") or "")
+            # 通过 MoviePilot 图片代理，解决 DMM 防盗链问题
+            poster_path = self._proxy_image_url(raw_poster) if raw_poster else ""
 
             # 标题
             title = movie_info.get("title") or movie_info.get("cn_title") or code
