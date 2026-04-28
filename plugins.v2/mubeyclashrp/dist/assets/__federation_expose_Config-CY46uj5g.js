@@ -128,7 +128,7 @@ log-level: silent`
           clash_apis: config.clash_dashboards,
           sub_links: sub_links.value
         };
-        const result = await props.api.post("/plugin/ClashRuleProvider/connectivity", testParams);
+        const result = await props.api.post("/plugin/MubeyClashRP/connectivity", testParams);
         if (result.success) {
           testResult.success = true;
           testResult.title = "连接测试成功！";

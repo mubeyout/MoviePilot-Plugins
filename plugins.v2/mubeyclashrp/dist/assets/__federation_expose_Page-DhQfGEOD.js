@@ -5577,7 +5577,7 @@ const _sfc_main$r = /* @__PURE__ */ _defineComponent$r({
         const priority = props.isAdding ? "" : `/${props.initialRule.priority}`;
         const method = props.isAdding ? "post" : "patch";
         const result = await props.api[method](
-          `/plugin/ClashRuleProvider/rules/${props.editingType}${priority}`,
+          `/plugin/MubeyClashRP/rules/${props.editingType}${priority}`,
           requestData
         );
         if (!result.success) {
@@ -5869,7 +5869,7 @@ const _sfc_main$q = /* @__PURE__ */ _defineComponent$q({
     async function deleteRule(priority) {
       loading.value = true;
       try {
-        await props.api.delete(`/plugin/ClashRuleProvider/rules/ruleset/${priority}`);
+        await props.api.delete(`/plugin/MubeyClashRP/rules/ruleset/${priority}`);
         emit("refresh", ["top", "ruleset"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -5882,7 +5882,7 @@ const _sfc_main$q = /* @__PURE__ */ _defineComponent$q({
     async function deleteRules(priorities) {
       loading.value = true;
       try {
-        await props.api.delete("/plugin/ClashRuleProvider/rules/ruleset", {
+        await props.api.delete("/plugin/MubeyClashRP/rules/ruleset", {
           data: { rules_priority: priorities }
         });
         emit("refresh", ["top", "ruleset"]);
@@ -5897,7 +5897,7 @@ const _sfc_main$q = /* @__PURE__ */ _defineComponent$q({
     async function handleReorderRule(targetPriority, movedPriority) {
       loading.value = true;
       try {
-        await props.api.put(`/plugin/ClashRuleProvider/reorder-rules/ruleset/${targetPriority}`, {
+        await props.api.put(`/plugin/MubeyClashRP/reorder-rules/ruleset/${targetPriority}`, {
           moved_priority: movedPriority
         });
         emit("refresh", ["top", "ruleset"]);
@@ -5912,7 +5912,7 @@ const _sfc_main$q = /* @__PURE__ */ _defineComponent$q({
     async function handleStatusChange(priority, disabled) {
       loading.value = true;
       try {
-        await props.api.post(`/plugin/ClashRuleProvider/rules/ruleset/metadata/disabled`, {
+        await props.api.post(`/plugin/MubeyClashRP/rules/ruleset/metadata/disabled`, {
           [priority]: disabled
         });
         emit("refresh", ["top", "ruleset"]);
@@ -5928,7 +5928,7 @@ const _sfc_main$q = /* @__PURE__ */ _defineComponent$q({
       loading.value = true;
       try {
         const payload = priorities.reduce((acc, p) => ({ ...acc, [p]: disabled }), {});
-        await props.api.post(`/plugin/ClashRuleProvider/rules/ruleset/metadata/disabled`, payload);
+        await props.api.post(`/plugin/MubeyClashRP/rules/ruleset/metadata/disabled`, payload);
         emit("refresh", ["top", "ruleset"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -6514,7 +6514,7 @@ const _sfc_main$o = /* @__PURE__ */ _defineComponent$o({
           vehicle: importRules.value.type,
           payload: importRules.value.payload
         };
-        const result = await props.api.post("/plugin/ClashRuleProvider/import", requestData);
+        const result = await props.api.post("/plugin/MubeyClashRP/import", requestData);
         if (!result.success) {
           emit("show-error", "规则导入失败: " + (result.message || "未知错误"));
           emit("show-snackbar", {
@@ -6721,7 +6721,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
     async function deleteRule(priority) {
       loading.value = true;
       try {
-        await props.api.delete(`/plugin/ClashRuleProvider/rules/top/${priority}`);
+        await props.api.delete(`/plugin/MubeyClashRP/rules/top/${priority}`);
         emit("refresh", ["top", "ruleset"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -6734,7 +6734,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
     async function deleteRules(priorities) {
       loading.value = true;
       try {
-        await props.api.delete("/plugin/ClashRuleProvider/rules/top", {
+        await props.api.delete("/plugin/MubeyClashRP/rules/top", {
           data: { rules_priority: priorities }
         });
         emit("refresh", ["top", "ruleset"]);
@@ -6749,7 +6749,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
     async function handleReorderRule(targetPriority, movedPriority) {
       loading.value = true;
       try {
-        await props.api.put(`/plugin/ClashRuleProvider/reorder-rules/top/${targetPriority}`, {
+        await props.api.put(`/plugin/MubeyClashRP/reorder-rules/top/${targetPriority}`, {
           moved_priority: movedPriority
         });
         emit("refresh", ["top", "ruleset"]);
@@ -6764,7 +6764,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
     async function handleStatusChange(priority, disabled) {
       loading.value = true;
       try {
-        await props.api.post(`/plugin/ClashRuleProvider/rules/top/metadata/disabled`, {
+        await props.api.post(`/plugin/MubeyClashRP/rules/top/metadata/disabled`, {
           [priority]: disabled
         });
         emit("refresh", ["top", "ruleset"]);
@@ -6780,7 +6780,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
       loading.value = true;
       try {
         const payload = priorities.reduce((acc, p) => ({ ...acc, [p]: disabled }), {});
-        await props.api.post(`/plugin/ClashRuleProvider/rules/top/metadata/disabled`, payload);
+        await props.api.post(`/plugin/MubeyClashRP/rules/top/metadata/disabled`, payload);
         emit("refresh", ["top", "ruleset"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -6799,7 +6799,7 @@ const _sfc_main$n = /* @__PURE__ */ _defineComponent$n({
       emit(
         "edit-visibility",
         rule.meta,
-        `/plugin/ClashRuleProvider/rules/${type}/${priority}/meta`,
+        `/plugin/MubeyClashRP/rules/${type}/${priority}/meta`,
         type
       );
     }
@@ -7641,7 +7641,7 @@ const _sfc_main$j = /* @__PURE__ */ _defineComponent$j({
           proxy_group: cleanedProxyGroup
         };
         const result = await props.api[method](
-          `/plugin/ClashRuleProvider/proxy-groups${path}`,
+          `/plugin/MubeyClashRP/proxy-groups${path}`,
           requestData
         );
         if (!result.success) {
@@ -8269,7 +8269,7 @@ const _sfc_main$i = /* @__PURE__ */ _defineComponent$i({
       loading.value = true;
       try {
         const n = encodeURIComponent(name);
-        await props.api.delete(`/plugin/ClashRuleProvider/proxy-groups/${n}`);
+        await props.api.delete(`/plugin/MubeyClashRP/proxy-groups/${n}`);
         emit("refresh", ["proxy-groups", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -8283,7 +8283,7 @@ const _sfc_main$i = /* @__PURE__ */ _defineComponent$i({
       loading.value = true;
       try {
         const n = encodeURIComponent(name);
-        await props.api.delete(`/plugin/ClashRuleProvider/proxy-groups/${n}/patch`);
+        await props.api.delete(`/plugin/MubeyClashRP/proxy-groups/${n}/patch`);
         emit("refresh", ["proxy-groups", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -8303,7 +8303,7 @@ const _sfc_main$i = /* @__PURE__ */ _defineComponent$i({
         }
         const n = encodeURIComponent(name);
         const newMeta = { ...group.meta, disabled };
-        await props.api.patch(`/plugin/ClashRuleProvider/proxy-groups/${n}/meta`, newMeta);
+        await props.api.patch(`/plugin/MubeyClashRP/proxy-groups/${n}/meta`, newMeta);
         emit("refresh", ["proxy-groups", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -8323,7 +8323,7 @@ const _sfc_main$i = /* @__PURE__ */ _defineComponent$i({
       emit(
         "edit-visibility",
         group.meta,
-        `/plugin/ClashRuleProvider/proxy-groups/${n}/meta`,
+        `/plugin/MubeyClashRP/proxy-groups/${n}/meta`,
         "proxy-groups"
       );
     }
@@ -9304,7 +9304,7 @@ const _sfc_main$e = /* @__PURE__ */ _defineComponent$e({
           proxy: proxy2
         };
         const name = encodeURIComponent(props.proxyData.data.name);
-        const result = await props.api.patch(`/plugin/ClashRuleProvider/proxies/${name}`, requestData);
+        const result = await props.api.patch(`/plugin/MubeyClashRP/proxies/${name}`, requestData);
         if (!result.success) {
           emit("show-error", "保存出站代理失败: " + (result.message || "未知错误"));
           emit("show-snackbar", {
@@ -10374,7 +10374,7 @@ const _sfc_main$d = /* @__PURE__ */ _defineComponent$d({
           vehicle: importProxies.value.type,
           payload: importProxies.value.payload
         };
-        const result = await props.api.put("/plugin/ClashRuleProvider/proxies", requestData);
+        const result = await props.api.put("/plugin/MubeyClashRP/proxies", requestData);
         if (!result.success) {
           emit("show-error", "节点导入失败: " + (result.message || "未知错误"));
           emit("show-snackbar", {
@@ -10418,7 +10418,7 @@ const _sfc_main$d = /* @__PURE__ */ _defineComponent$d({
     async function deleteProxy(name) {
       loading.value = true;
       try {
-        await props.api.delete(`/plugin/ClashRuleProvider/proxies/${name}`);
+        await props.api.delete(`/plugin/MubeyClashRP/proxies/${name}`);
         emit("refresh", ["proxies", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -10432,7 +10432,7 @@ const _sfc_main$d = /* @__PURE__ */ _defineComponent$d({
       loading.value = true;
       try {
         const n = encodeURIComponent(name);
-        await props.api.delete(`/plugin/ClashRuleProvider/proxies/${n}/patch`);
+        await props.api.delete(`/plugin/MubeyClashRP/proxies/${n}/patch`);
         emit("refresh", ["proxies", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -10452,7 +10452,7 @@ const _sfc_main$d = /* @__PURE__ */ _defineComponent$d({
         }
         const n = encodeURIComponent(name);
         const newMeta = { ...proxy.meta, disabled };
-        await props.api.patch(`/plugin/ClashRuleProvider/proxies/${n}/meta`, newMeta);
+        await props.api.patch(`/plugin/MubeyClashRP/proxies/${n}/meta`, newMeta);
         emit("refresh", ["proxies", "clash-outbounds"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -10469,7 +10469,7 @@ const _sfc_main$d = /* @__PURE__ */ _defineComponent$d({
         return;
       }
       const n = encodeURIComponent(name);
-      emit("edit-visibility", proxy.meta, `/plugin/ClashRuleProvider/proxies/${n}/meta`, "proxies");
+      emit("edit-visibility", proxy.meta, `/plugin/MubeyClashRP/proxies/${n}/meta`, "proxies");
     }
     return (_ctx, _cache) => {
       const _component_v_progress_circular = _resolveComponent$d("v-progress-circular");
@@ -10863,7 +10863,7 @@ const _sfc_main$c = /* @__PURE__ */ _defineComponent$c({
       loading.value = true;
       emit("start-loading");
       try {
-        await props.api.put("plugin/ClashRuleProvider/refresh", {
+        await props.api.put("plugin/MubeyClashRP/refresh", {
           url: props.url
         });
         emit("show-snackbar", {
@@ -10889,7 +10889,7 @@ const _sfc_main$c = /* @__PURE__ */ _defineComponent$c({
     async function toggleSubscription(val) {
       emit("start-loading");
       try {
-        await props.api.post("plugin/ClashRuleProvider/subscription-info", {
+        await props.api.post("plugin/MubeyClashRP/subscription-info", {
           url: props.url,
           enabled: val
         });
@@ -11748,7 +11748,7 @@ const _sfc_main$7 = /* @__PURE__ */ _defineComponent$7({
         const requestData = props.isAdding ? newRuleProvider.value.data : newRuleProvider.value;
         const method = props.isAdding ? "post" : "patch";
         const result = await props.api[method](
-          `/plugin/ClashRuleProvider/rule-providers/${name}`,
+          `/plugin/MubeyClashRP/rule-providers/${name}`,
           requestData
         );
         if (!result.success) {
@@ -12027,7 +12027,7 @@ const _sfc_main$6 = /* @__PURE__ */ _defineComponent$6({
       loading.value = true;
       try {
         const n = encodeURIComponent(name);
-        await props.api.delete(`/plugin/ClashRuleProvider/rule-providers/${n}`);
+        await props.api.delete(`/plugin/MubeyClashRP/rule-providers/${n}`);
         emit("refresh", ["rule-providers"]);
       } catch (err) {
         if (err instanceof Error) emit("show-error", err.message || "删除规则集合失败");
@@ -12045,7 +12045,7 @@ const _sfc_main$6 = /* @__PURE__ */ _defineComponent$6({
         }
         const n = encodeURIComponent(name);
         const newMeta = { ...provider.meta, disabled };
-        await props.api.patch(`/plugin/ClashRuleProvider/rule-providers/${n}/meta`, newMeta);
+        await props.api.patch(`/plugin/MubeyClashRP/rule-providers/${n}/meta`, newMeta);
         emit("refresh", ["rule-providers"]);
       } catch (err) {
         if (err instanceof Error) {
@@ -12065,7 +12065,7 @@ const _sfc_main$6 = /* @__PURE__ */ _defineComponent$6({
       emit(
         "edit-visibility",
         provider.meta,
-        `/plugin/ClashRuleProvider/rule-providers/${n}/meta`,
+        `/plugin/MubeyClashRP/rule-providers/${n}/meta`,
         "rule-providers"
       );
     }
@@ -12522,7 +12522,7 @@ const _sfc_main$4 = /* @__PURE__ */ _defineComponent$4({
         saveHostLoading.value = true;
         newHost.value.domain = newHost.value.domain.trim();
         const targetDomain = props.isAdding ? newHost.value.domain : props.initialValue.domain;
-        const result = await props.api.post("/plugin/ClashRuleProvider/hosts", {
+        const result = await props.api.post("/plugin/MubeyClashRP/hosts", {
           domain: targetDomain,
           host: newHost.value
         });
@@ -12998,7 +12998,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
     async function deleteHost(name) {
       loading.value = true;
       try {
-        await props.api.delete(`/plugin/ClashRuleProvider/hosts/${encodeURIComponent(name)}`);
+        await props.api.delete(`/plugin/MubeyClashRP/hosts/${encodeURIComponent(name)}`);
         emit("refresh");
       } catch (err) {
         emit("show-error", err.message || "删除 host 失败");
@@ -13577,7 +13577,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       });
     }
     function copyPluginLink() {
-      const url = `${window.location.origin}/#/plugins?tab=installed&id=ClashRuleProvider`;
+      const url = `${window.location.origin}/#/plugins?tab=installed&id=MubeyClashRP`;
       copyToClipboard(url);
     }
     function generateIdentifierUrl(identifier) {
@@ -13606,7 +13606,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       visibilityDialogVisible.value = true;
     }
     async function refreshStatus() {
-      const state = await props.api.get("/plugin/ClashRuleProvider/status");
+      const state = await props.api.get("/plugin/MubeyClashRP/status");
       status.value = state?.data?.state ? "running" : "disabled";
       subUrl.value = state?.data?.sub_url || "";
       if (state?.data?.subscription_info) {
@@ -13617,35 +13617,35 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
       geoRules.value = state?.data?.geoRules ?? geoRules.value;
     }
     async function refreshTopRules() {
-      const response = await props.api.get("/plugin/ClashRuleProvider/rules/top");
+      const response = await props.api.get("/plugin/MubeyClashRP/rules/top");
       rules.value = response?.data || [];
     }
     async function refreshRulesetRules() {
-      const response = await props.api.get("/plugin/ClashRuleProvider/rules/ruleset");
+      const response = await props.api.get("/plugin/MubeyClashRP/rules/ruleset");
       rulesetRules.value = response?.data || [];
     }
     async function refreshOutbounds() {
-      const outboundsResponse = await props.api.get("/plugin/ClashRuleProvider/clash-outbound");
+      const outboundsResponse = await props.api.get("/plugin/MubeyClashRP/clash-outbound");
       customOutbounds.value = outboundsResponse?.data || [];
     }
     async function refreshExtraRuleProviders() {
-      const providersResponse = await props.api.get("/plugin/ClashRuleProvider/rule-providers");
+      const providersResponse = await props.api.get("/plugin/MubeyClashRP/rule-providers");
       ruleProviders.value = providersResponse?.data || [];
     }
     async function refreshProxyGroups() {
-      const proxyGroupsResponse = await props.api.get("/plugin/ClashRuleProvider/proxy-groups");
+      const proxyGroupsResponse = await props.api.get("/plugin/MubeyClashRP/proxy-groups");
       proxyGroups.value = proxyGroupsResponse?.data || [];
     }
     async function refreshExtraProxies() {
-      const extraProxiesResponse = await props.api.get("/plugin/ClashRuleProvider/proxies");
+      const extraProxiesResponse = await props.api.get("/plugin/MubeyClashRP/proxies");
       proxies.value = extraProxiesResponse?.data || [];
     }
     async function refreshHosts() {
-      const hostsResponse = await props.api.get("/plugin/ClashRuleProvider/hosts");
+      const hostsResponse = await props.api.get("/plugin/MubeyClashRP/hosts");
       hosts.value = hostsResponse?.data || [];
     }
     async function refreshProxyProviders() {
-      const proxyProvidersResponse = await props.api.get("/plugin/ClashRuleProvider/proxy-providers");
+      const proxyProvidersResponse = await props.api.get("/plugin/MubeyClashRP/proxy-providers");
       proxyProviders.value = proxyProvidersResponse?.data || [];
     }
     async function refreshDataOf(region) {
@@ -13701,15 +13701,15 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
           hostsResponse,
           proxyProvidersResponse
         ] = await Promise.all([
-          props.api.get("/plugin/ClashRuleProvider/status"),
-          props.api.get("/plugin/ClashRuleProvider/rules/top"),
-          props.api.get("/plugin/ClashRuleProvider/rules/ruleset"),
-          props.api.get("/plugin/ClashRuleProvider/clash-outbound"),
-          props.api.get("/plugin/ClashRuleProvider/rule-providers"),
-          props.api.get("/plugin/ClashRuleProvider/proxy-groups"),
-          props.api.get("/plugin/ClashRuleProvider/proxies"),
-          props.api.get("/plugin/ClashRuleProvider/hosts"),
-          props.api.get("/plugin/ClashRuleProvider/proxy-providers")
+          props.api.get("/plugin/MubeyClashRP/status"),
+          props.api.get("/plugin/MubeyClashRP/rules/top"),
+          props.api.get("/plugin/MubeyClashRP/rules/ruleset"),
+          props.api.get("/plugin/MubeyClashRP/clash-outbound"),
+          props.api.get("/plugin/MubeyClashRP/rule-providers"),
+          props.api.get("/plugin/MubeyClashRP/proxy-groups"),
+          props.api.get("/plugin/MubeyClashRP/proxies"),
+          props.api.get("/plugin/MubeyClashRP/hosts"),
+          props.api.get("/plugin/MubeyClashRP/proxy-providers")
         ]);
         status.value = state?.data?.state ? "running" : "disabled";
         subUrl.value = state?.data?.sub_url || "";

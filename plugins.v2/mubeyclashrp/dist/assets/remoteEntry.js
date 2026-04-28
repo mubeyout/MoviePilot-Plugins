@@ -50,7 +50,7 @@ const currentImports = {};
          }
          
           if (dontAppendStylesToHead) {
-            const key = 'css__ClashRuleProvider__' + exposeItemName;
+            const key = 'css__MubeyClashRP__' + exposeItemName;
             window[key] = window[key] || [];
             window[key].push(href);
             return;

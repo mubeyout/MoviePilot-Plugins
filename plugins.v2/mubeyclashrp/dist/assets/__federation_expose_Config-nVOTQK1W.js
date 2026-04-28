@@ -129,7 +129,7 @@ log-level: silent`
           clash_apis: config.clash_dashboards,
           sub_links: sub_links.value
         };
-        const result = await props.api.post("/plugin/ClashRuleProvider/connectivity", testParams);
+        const result = await props.api.post("/plugin/MubeyClashRP/connectivity", testParams);
         if (result.success) {
           testResult.success = true;
           testResult.title = "连接测试成功！";
@@ -200,7 +200,7 @@ log-level: silent`
     };
     async function openClashTemplateDialog() {
       try {
-        const result = await props.api.get("/plugin/ClashRuleProvider/template");
+        const result = await props.api.get("/plugin/MubeyClashRP/template");
         if (result.success && result.data && result.data.template) {
           clashTemplateContent.value = result.data.template;
         } else {
@@ -215,7 +215,7 @@ log-level: silent`
     async function saveClashTemplateToBackend() {
       try {
         savingTemplate.value = true;
-        const result = await props.api.put("/plugin/ClashRuleProvider/template", { template: clashTemplateContent.value });
+        const result = await props.api.put("/plugin/MubeyClashRP/template", { template: clashTemplateContent.value });
         if (result.success) {
           config.clash_template = clashTemplateContent.value;
           clashTemplateDialog.value = false;

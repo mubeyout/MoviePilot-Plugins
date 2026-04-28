@@ -15163,7 +15163,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
       });
       if (props.allowRefresh && componentConfig.clash_available) {
         evtSource = new EventSource(
-          "api/v1/plugin/ClashRuleProvider/clash/ws/traffic?secret=" + componentConfig.secret
+          "api/v1/plugin/MubeyClashRP/clash/ws/traffic?secret=" + componentConfig.secret
         );
         evtSource.addEventListener("traffic", (event) => {
           const data = JSON.parse(event.data);
@@ -15177,7 +15177,7 @@ const _sfc_main$2 = /* @__PURE__ */ _defineComponent$2({
           }
         });
         connectionsEvtSource = new EventSource(
-          "api/v1/plugin/ClashRuleProvider/clash/ws/connections?secret=" + componentConfig.secret
+          "api/v1/plugin/MubeyClashRP/clash/ws/connections?secret=" + componentConfig.secret
         );
         connectionsEvtSource.addEventListener("connections", (event) => {
           const data = JSON.parse(event.data);
@@ -15425,7 +15425,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
     let refreshTimer = null;
     async function fetchClashData(endpoint, dataKey) {
       try {
-        const data = await props.api.get(`plugin/ClashRuleProvider/clash/proxy/${endpoint}`);
+        const data = await props.api.get(`plugin/MubeyClashRP/clash/proxy/${endpoint}`);
         if (!data) {
           clashInfo.value.status = "not connected";
         }
