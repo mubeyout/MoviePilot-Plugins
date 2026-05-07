@@ -620,7 +620,7 @@ class ByteMuseDiscover(_PluginBase):
                 mediainfo = schemas.MediaInfo(
                     type="电影",
                     title=title,
-                    mediaid_prefix="bytemuse",
+                    mediaid_prefix="metatube_search",
                     media_id=code,  # 番号
                     imdb_id=code,  # ✅ 直接使用番号，不带前缀（与 metatubesource 一致）
                     poster_path=poster_path,
@@ -673,7 +673,7 @@ class ByteMuseDiscover(_PluginBase):
                 return schemas.MediaInfo(
                     type="电影",
                     title=movie_info.get("title") or movie_info.get("code") or "未知",
-                    mediaid_prefix="bytemuse",
+                    mediaid_prefix="metatube_search",
                     media_id=movie_info.get("code") or "unknown",
                 )
 
@@ -717,8 +717,8 @@ class ByteMuseDiscover(_PluginBase):
         logger.info(f"bytemuse_media 被调用: mediaid={mediaid}")
 
         # 提取番号
-        if mediaid.startswith("bytemuse:"):
-            code = mediaid.replace("bytemuse:", "", 1)
+        if mediaid.startswith("metatube_search:"):
+            code = mediaid.replace("metatube_search:", "", 1)
         else:
             code = mediaid
 
@@ -753,8 +753,8 @@ class ByteMuseDiscover(_PluginBase):
         # 注意：现在 imdb_id 已经是纯番号，不带 "bytemuse:" 前缀
         code = None
         if mediaid:
-            if mediaid.startswith("bytemuse:"):
-                code = mediaid.replace("bytemuse:", "", 1)
+            if mediaid.startswith("metatube_search:"):
+                code = mediaid.replace("metatube_search:", "", 1)
             else:
                 code = mediaid
         elif imdb_id:
@@ -790,8 +790,8 @@ class ByteMuseDiscover(_PluginBase):
         code = None
         if mediaid:
             # mediaid 可能是 "bytemuse:SSIS-123" 或 "SSIS-123"
-            if mediaid.startswith("bytemuse:"):
-                code = mediaid.replace("bytemuse:", "", 1)
+            if mediaid.startswith("metatube_search:"):
+                code = mediaid.replace("metatube_search:", "", 1)
             else:
                 code = mediaid
         elif imdb_id:
@@ -917,7 +917,7 @@ class ByteMuseDiscover(_PluginBase):
             mediainfo = schemas.MediaInfo(
                 type="电影",
                 title=title,
-                mediaid_prefix="bytemuse",
+                mediaid_prefix="metatube_search",
                 media_id=media_id,
                 imdb_id=code,  # ✅ 直接使用番号，不带前缀（与 metatubesource 一致）
                 poster_path=poster_path,
@@ -1014,7 +1014,7 @@ class ByteMuseDiscover(_PluginBase):
         event_data: DiscoverSourceEventData = event.event_data
         bytemuse_source = schemas.DiscoverMediaSource(
             name="ByteMuse",
-            mediaid_prefix="bytemuse",
+            mediaid_prefix="metatube_search",
             api_path=f"plugin/ByteMuseDiscover/bytemuse_discover?apikey={settings.API_TOKEN}",
             filter_params={
                 "discover_type": "new_releases",
@@ -1041,13 +1041,13 @@ class ByteMuseDiscover(_PluginBase):
 
         # 检查是否是 ByteMuse 的 mediaid
         mediaid = event_data.mediaid or ""
-        if not mediaid.startswith("bytemuse:"):
+        if not mediaid.startswith("metatube_search:"):
             return
 
         logger.info(f"ByteMuse: 处理媒体识别转换 - {mediaid}")
 
         # 提取番号
-        code = mediaid.replace("bytemuse:", "", 1)
+        code = mediaid.replace("metatube_search:", "", 1)
 
         # 获取详情
         mediainfo = await self.async_recognize_media(
