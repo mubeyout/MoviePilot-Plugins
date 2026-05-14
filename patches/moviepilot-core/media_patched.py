@@ -18,7 +18,6 @@ from app.schemas.category import CategoryConfig
 from app.schemas.types import ChainEventType
 from app.log import logger
 import json
-import urllib.request
 import urllib.parse
 import ssl
 
@@ -250,12 +249,14 @@ async def detail(mediaid: str, type_name: str, title: Optional[str] = None, year
         try:
             logger.info(f"[BYTEMUSE_DETAIL] code={code}")
             bm_url = 'http://10.0.0.1:3750/api/v1/codes/search'
-            req = urllib.request.Request(
-                f'{bm_url}?query={urllib.parse.quote(code)}',
-                headers={'User-Agent': 'Mozilla/5.0'}
-            )
-            with urllib.request.urlopen(req, context=ssl.create_default_context(), timeout=5) as r:
-                bm_data = json.loads(r.read())
+            import http.client
+            import urllib.parse as _up
+            _params = _up.urlencode({'query': code})
+            _conn = http.client.HTTPConnection('10.0.0.1', 3750, timeout=5)
+            _conn.request('GET', f'/api/v1/codes/search?{_params}')
+            _resp = _conn.getresponse()
+            bm_data = json.loads(_resp.read())
+            _conn.close()
             codes_data = bm_data.get('data', {}).get('codes') or []
             actors_data = bm_data.get('data', {}).get('actors') or []
 
@@ -296,12 +297,12 @@ async def detail(mediaid: str, type_name: str, title: Optional[str] = None, year
                 actor_name = main_actor.get('name', '')
                 if actor_name:
                     try:
-                        req2 = urllib.request.Request(
-                            f'{bm_url}?query={urllib.parse.quote(actor_name)}',
-                            headers={'User-Agent': 'Mozilla/5.0'}
-                        )
-                        with urllib.request.urlopen(req2, context=ssl.create_default_context(), timeout=5) as r2:
-                            bm_search = json.loads(r2.read())
+                        import http.client as _hc2
+                        _conn2 = _hc2.HTTPConnection('10.0.0.1', 3750, timeout=5)
+                        _conn2.request('GET', f'/api/v1/codes/search?query={actor_name}')
+                        _resp2 = _conn2.getresponse()
+                        bm_search = json.loads(_resp2.read())
+                        _conn2.close()
                         all_codes = bm_search.get('data', {}).get('codes') or []
                         for c in all_codes[:6]:
                             c_code = c.get('code', '') if isinstance(c, dict) else ''
@@ -318,66 +319,98 @@ async def detail(mediaid: str, type_name: str, title: Optional[str] = None, year
                     except Exception as e:
                         logger.debug(f"[BYTEMUSE_DETAIL] Recommendations fetch failed: {e}")
 
-                        # Build stills from item (with image proxy for DMM etc.)
-            stills = []
-            still_photo = item.get('still_photo', '') or ''
-            if still_photo:
-                from urllib.parse import quote
-                for s in still_photo.split(','):
-                    s = s.strip()
-                    if not s:
-                        continue
-                    if s.startswith('http'):
-                        s = f'/api/v1/plugin/ByteMuseDiscover/image?url={quote(s, safe="")}'
-                    stills.append(s)
+                        # Build similar (today new releases via plugin internal call)
+                        similar = []
+                        try:
+                            from app.core.plugin import PluginManager
+                            pm = PluginManager()
+                            plugin_inst = pm._running_plugins.get('ByteMuseDiscover')
+                            if plugin_inst and hasattr(plugin_inst, 'bytemuse_discover'):
+                                import asyncio
+                                sim_result = plugin_inst.bytemuse_discover(discover_type='new_releases', page=1, count=15)
+                                if asyncio.iscoroutine(sim_result):
+                                    sim_result = await sim_result
+                                if isinstance(sim_result, list):
+                                    rec_ids = set((x.get('id','') or x.get('media_id','')) for x in recommendations)
+                                    for si in sim_result:
+                                        si_mid = getattr(si, 'media_id', '') or getattr(si, 'imdb_id', '') or ''
+                                        si_code = str(si_mid).replace('metatube_search:','').replace('bytemuse:','')
+                                        si_title = getattr(si, 'title', '') or si_code
+                                        si_poster = getattr(si, 'poster_path', '') or ''
+                                        if si_code and si_code != code and si_code not in rec_ids:
+                                            similar.append({
+                                                'id': si_code, 'tmdb_id': si_code,
+                                                'title': si_title, 'poster_path': si_poster,
+                                                'backdrop_path': '', 'overview': '', 'vote_average': 0,
+                                                'source': 'bytemuse', 'type': '\u7535\u5f71',
+                                                'media_id': si_code, 'mediaid_prefix': 'metatube_search'
+                                            })
+                                        if len(similar) >= 12:
+                                            break
+                                    logger.info(f"[BYTEMUSE_DETAIL] Similar: {len(similar)} items")
+                        except Exception as e:
+                            logger.debug(f"[BYTEMUSE_DETAIL] Similar fetch failed: {e}")
 
-            result = {
-                'id': code,
-                'tmdb_id': code,
-                'imdb_id': None, 'tvdb_id': None, 'douban_id': None, 'bangumi_id': None,
-                'collection_id': None, 'belongs_to_collection': None,
-                'title': title,
-                'en_title': item.get('title', '') or '',
-                'original_title': item.get('title', '') or '',
-                'overview': description,
-                'poster_path': poster,
-                'backdrop_path': banner,
-                'vote_average': float(item.get('score', 0) or 0),
-                'source': 'bytemuse',
-                'type': '电影',
-                'adult': True,
-                'category': '成人/日系',
-                'original_language': 'ja',
-                'year': year or '2026',
-                'release_date': f'{year or "2026"}-01-01',
-                'mediaid_prefix': 'metatube',
-                'media_id': code,
-                'detail_link': f'https://www.javbus.com/{code}' if '-' in code else '',
-                'status': 'Released',
-                'runtime': int(duration) if duration else 120,
-                'origin_country': ['JP'],
-                'spoken_languages': [{'english_name': 'Japanese', 'iso_639_1': 'ja', 'name': 'Japanese'}],
-                'production_countries': [{'iso_3166_1': 'JP', 'name': 'Japan'}],
-                'genres': [{'id': 18, 'name': 'Drama'}],
-                'genre_ids': [18],
-                'popularity': float(item.get('score', 0) or 0) * 10,
-                'vote_count': 0,
-                'tagline': '',
-                'release_dates': [{'date': f'{year or "2026"}-01-01T00:00:00.000Z', 'iso_code': 'JP', 'note': '', 'type': 3}],
-                'first_air_date': None, 'last_air_date': None,
-                'networks': [], 'number_of_episodes': None, 'number_of_seasons': None,
-                'created_by': [], 'episode_run_time': [],
-                'languages': ['ja'], 'season_info': [], 'seasons': {},
-                'episode_groups': [], 'episode_group': None, 'next_episode_to_air': {},
-                'title_year': f'{title} ({year})' if year else title,
-                'actors': cast,
-                'directors': [],
-                'stills': stills,
-                'recommendations': recommendations,
-                                'names': [code],
-            }
-            logger.info(f"[BYTEMUSE_DETAIL] Success: {title}")
-            return result
+                        # Build stills from item (with image proxy for DMM etc.)
+                        stills = []
+                        still_photo = item.get('still_photo', '') or ''
+                        if still_photo:
+                            from urllib.parse import quote
+                            for s in still_photo.split(','):
+                                s = s.strip()
+                                if not s:
+                                    continue
+                                if s.startswith('http'):
+                                    s = f'/api/v1/plugin/ByteMuseDiscover/image?url={quote(s, safe="")}'
+                                stills.append(s)
+
+                        result = {
+                            'id': code,
+                            'tmdb_id': code,
+                            'imdb_id': None, 'tvdb_id': None, 'douban_id': None, 'bangumi_id': None,
+                            'collection_id': None, 'belongs_to_collection': None,
+                            'title': title,
+                            'en_title': item.get('title', '') or '',
+                            'original_title': item.get('title', '') or '',
+                            'overview': description,
+                            'poster_path': poster,
+                            'backdrop_path': banner,
+                            'vote_average': float(item.get('score', 0) or 0),
+                            'source': 'bytemuse',
+                            'type': '电影',
+                            'adult': True,
+                            'category': '成人/日系',
+                            'original_language': 'ja',
+                            'year': year or '2026',
+                            'release_date': f'{year or "2026"}-01-01',
+                            'mediaid_prefix': 'metatube',
+                            'media_id': code,
+                            'detail_link': f'https://www.javbus.com/{code}' if '-' in code else '',
+                            'status': 'Released',
+                            'runtime': int(duration) if duration else 120,
+                            'origin_country': ['JP'],
+                            'spoken_languages': [{'english_name': 'Japanese', 'iso_639_1': 'ja', 'name': 'Japanese'}],
+                            'production_countries': [{'iso_3166_1': 'JP', 'name': 'Japan'}],
+                            'genres': [{'id': 18, 'name': 'Drama'}],
+                            'genre_ids': [18],
+                            'popularity': float(item.get('score', 0) or 0) * 10,
+                            'vote_count': 0,
+                            'tagline': '',
+                            'release_dates': [{'date': f'{year or "2026"}-01-01T00:00:00.000Z', 'iso_code': 'JP', 'note': '', 'type': 3}],
+                            'first_air_date': None, 'last_air_date': None,
+                            'networks': [], 'number_of_episodes': None, 'number_of_seasons': None,
+                            'created_by': [], 'episode_run_time': [],
+                            'languages': ['ja'], 'season_info': [], 'seasons': {},
+                            'episode_groups': [], 'episode_group': None, 'next_episode_to_air': {},
+                            'title_year': f'{title} ({year})' if year else title,
+                            'actors': cast,
+                            'directors': [],
+                            'stills': stills,
+                            'recommendations': recommendations,
+                            'similar': similar,
+                        }
+                        logger.info(f"[BYTEMUSE_DETAIL] Success: {title}")
+                        return result
         except Exception as e:
             import traceback
             logger.error(f"[BYTEMUSE_DETAIL] Failed: {e} - {traceback.format_exc()}")

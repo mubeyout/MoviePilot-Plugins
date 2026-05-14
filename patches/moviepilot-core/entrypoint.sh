@@ -20,34 +20,24 @@ function WARN() {
     echo -e "${WARN} ${1}"
 }
 
-# 设置虚拟环境路径（兼容群晖等系统必须这样配置）
+# 设置虚拟环境路径
 VENV_PATH="${VENV_PATH:-/opt/venv}"
 export PATH="${VENV_PATH}/bin:$PATH"
 
-# 校正设置目录
 CONFIG_DIR="${CONFIG_DIR:-/config}"
 
-# 记录非系统环境（docker容器表）提供的变量
 declare -ga VARS_SET_BY_SCRIPT=()
 
-# 环境变量补全
-# 优先级: 系统环境变量 -> .env 文件 (即使为空字符串) -> 预设默认值
-# 精准适配 Python 端 set_key (quote_mode="always", 单引号包裹, \' 转义)
+# ============ 环境变量补全 ============
+
 function load_config_from_app_env() {
-
     local env_file="${CONFIG_DIR}/app.env"
-
-    # 定义 ["变量名"]="预设默认值"
-    # 禁止填入 CONFIG_DIR 变量，ACME_ENV_ 开头的变量暂时不处理，还是交由 cert.sh 处理
     declare -A vars_and_default_values=(
-        # update.sh
         ["PIP_PROXY"]=""
         ["GITHUB_PROXY"]=""
         ["PROXY_HOST"]=""
         ["GITHUB_TOKEN"]=""
         ["MOVIEPILOT_AUTO_UPDATE"]="release"
-
-        # database
         ["DB_TYPE"]="sqlite"
         ["DB_POSTGRESQL_HOST"]="localhost"
         ["DB_POSTGRESQL_PORT"]="5432"
@@ -56,8 +46,6 @@ function load_config_from_app_env() {
         ["DB_POSTGRESQL_PASSWORD"]="moviepilot"
         ["DB_POSTGRESQL_POOL_SIZE"]="20"
         ["DB_POSTGRESQL_MAX_OVERFLOW"]="30"
-
-        # cert
         ["ENABLE_SSL"]="false"
         ["SSL_DOMAIN"]=""
         ["NGINX_PORT"]="3000"
@@ -66,27 +54,20 @@ function load_config_from_app_env() {
     )
 
     INFO "开始加载配置 (配置文件: ${env_file})..."
-
     shopt -s extglob
-
     declare -A values_from_env_file
     if [ -f "${env_file}" ]; then
         INFO "检测到 ${env_file} 文件，尝试解析..."
         while IFS= read -r line || [ -n "$line" ]; do
-            if [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]]; then
-                continue
-            fi
-
+            if [[ "$line" =~ ^[[:space:]]*# || -z "$line" ]]; then continue; fi
             local key_in_file value_raw_in_file
             if [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=(.*) ]]; then
                 key_in_file="${BASH_REMATCH[1]}"
                 value_raw_in_file="${BASH_REMATCH[2]}"
-
                 if [[ -n "${vars_and_default_values[$key_in_file]+_}" ]]; then
                     local temp_val_after_initial_trim
                     temp_val_after_initial_trim="${value_raw_in_file#"${value_raw_in_file%%[![:space:]]*}"}"
                     temp_val_after_initial_trim="${temp_val_after_initial_trim%"${temp_val_after_initial_trim##*[![:space:]]}"}"
-
                     local val_before_quote_check="${temp_val_after_initial_trim}"
                     if [[ ! ("${temp_val_after_initial_trim:0:1}" == "'" && "${temp_val_after_initial_trim: -1}" == "'") ]]; then
                         if [[ "${temp_val_after_initial_trim}" =~ ^(.*)[[:space:]]+# ]]; then
@@ -96,7 +77,6 @@ function load_config_from_app_env() {
                             val_before_quote_check=""
                         fi
                     fi
-
                     local parsed_value_from_file
                     if [[ "${val_before_quote_check:0:1}" == "'" && "${val_before_quote_check: -1}" == "'" && ${#val_before_quote_check} -ge 2 ]]; then
                         parsed_value_from_file="${val_before_quote_check:1:${#val_before_quote_check}-2}"
@@ -115,21 +95,17 @@ function load_config_from_app_env() {
             fi
         done < <(sed -e '1s/^\xEF\xBB\xBF//' -e 's/\r$//g' "${env_file}")
         INFO "${env_file} 解析完毕。"
-     else
+    else
         INFO "${env_file} 文件不存在，跳过文件加载。"
-     fi
+    fi
 
     INFO "正在根据优先级确定并导出配置值..."
     for var_name in "${!vars_and_default_values[@]}"; do
         local fallback_value="${vars_and_default_values[$var_name]}"
         local final_value
         local value_source="未设置"
-        # 标志变量是否来自初始环境
         local set_by_initial_env=false
-
-        # 检查变量是否在环境中已设置（可能为空）
         if eval "[ -n \"\${${var_name}+x}\" ]"; then
-            # 获取其值
             final_value="$(eval echo \"\$"${var_name}"\")"
             value_source="系统环境变量"
             set_by_initial_env=true
@@ -140,108 +116,75 @@ function load_config_from_app_env() {
             final_value="${fallback_value}"
             value_source="内置默认值"
         fi
-
-        # 不论来源如何，都导出变量，以便脚本的其余部分和子进程使用
-        # (例如 envsubst, mp_update.sh, cert.sh)
         if declare -gx "${var_name}=${final_value}"; then
             if [ -z "${final_value}" ]; then
                  INFO "变量 ${var_name}, 值为空 (来源: ${value_source})。"
             else
                  INFO "变量 ${var_name}, 值: ${final_value} (来源: ${value_source})。"
             fi
-
-            # 如果变量不是来自初始环境变量，则记录下来以便稍后 unset
             if ! ${set_by_initial_env}; then
-                # 检查是否已在数组中，避免重复添加
                 local found_in_script_vars=false
                 for item in "${VARS_SET_BY_SCRIPT[@]}"; do
-                    if [[ "$item" == "$var_name" ]]; then
-                        found_in_script_vars=true
-                        break
-                    fi
+                    if [[ "$item" == "$var_name" ]]; then found_in_script_vars=true; break; fi
                 done
-                if ! ${found_in_script_vars}; then
-                    VARS_SET_BY_SCRIPT+=("${var_name}")
-                fi
+                if ! ${found_in_script_vars}; then VARS_SET_BY_SCRIPT+=("${var_name}"); fi
             fi
         else
             ERROR "导出变量 ${var_name}, 值: '${final_value}'失败 (来源: ${value_source}) "
         fi
     done
-
     shopt -u extglob
     INFO "配置加载流程执行完毕。"
 }
 
-# 优雅退出
+# ============ 优雅退出 ============
+
 function graceful_exit() {
     local exit_code=${1:-0}
     local reason=${2:-python_exit}
-
     if [ "$reason" = "signal" ]; then
         INFO "→ 收到停止信号，执行精准清理程序..."
     else
         INFO "→ 主进程已退出 (代码: $exit_code)，执行清理程序..."
     fi
-
-    # 第一步：停止前端 Nginx
-    # 默认配置启动的 Nginx，默认 PID 在 /var/run/nginx.pid
     INFO "→ [1/3] 正在关闭前端 Nginx..."
     nginx -c /etc/nginx/nginx.conf -s stop 2>/dev/null || true
-
-    # 第二步：等待 Python 退出
-    # 由于使用了 tini -g，Python 已经收到了信号，我们只需等待
     if [ -n "$PYTHON_PID" ] && ps -p "$PYTHON_PID" > /dev/null; then
         INFO "→ [2/3] 正在等待 Python (PID: $PYTHON_PID) 完成清理..."
-        # 这里的 wait 会阻塞，直到 Python 真正退出
         wait "$PYTHON_PID" 2>/dev/null || true
     fi
-
-    # 第三步：最后关闭 Docker Proxy
-    # 必须指定配置文件路径，否则 nginx -s stop 找不到它
     INFO "→ [3/3] 后端已安全退出，正在关闭 Docker Proxy..."
     if [ -S "/var/run/docker.sock" ]; then
         nginx -c /etc/nginx/docker_http_proxy.conf -s stop 2>/dev/null || true
     fi
-
-    # 根据退出码判断最终日志性质
-    # 0: 正常退出
-    # 130/143: 被系统信号终止（通常也视为预期的清理退出）
     if [ "$exit_code" -eq 0 ] || [ "$exit_code" -eq 130 ] || [ "$exit_code" -eq 143 ]; then
         INFO "→ 所有服务已按序清理，容器正常退出 (ExitCode: $exit_code)。"
     else
-        # 非预期退出码，使用 ERROR 级别并加重提示
         ERROR "→ 清理完成，但主进程检测到异常退出 (ExitCode: $exit_code)！"
     fi
     exit "$exit_code"
 }
 
-# 使用env配置
+# ============ 主流程 ============
+
 load_config_from_app_env
 
-# 生成HTTPS配置块
+# HTTPS 配置
 if [ "${ENABLE_SSL}" = "true" ]; then
     export HTTPS_SERVER_CONF=$(cat <<EOF
     server {
         include /etc/nginx/mime.types;
         default_type application/octet-stream;
-
         listen ${SSL_NGINX_PORT:-443} ssl;
         listen [::]:${SSL_NGINX_PORT:-443} ssl;
         server_name ${SSL_DOMAIN:-moviepilot};
-
-        # SSL证书路径
         ssl_certificate ${CONFIG_DIR}/certs/latest/fullchain.pem;
         ssl_certificate_key ${CONFIG_DIR}/certs/latest/privkey.pem;
-
-        # SSL安全配置
         ssl_protocols TLSv1.2 TLSv1.3;
         ssl_ciphers 'ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384';
         ssl_prefer_server_ciphers on;
         ssl_session_cache shared:SSL:10m;
         ssl_session_timeout 10m;
-
-        # 公共配置
         include common.conf;
     }
 EOF
@@ -250,80 +193,54 @@ else
     export HTTPS_SERVER_CONF="# HTTPS未启用"
 fi
 
-# 使用 `envsubst` 将模板文件中的 ${NGINX_PORT} 替换为实际的环境变量值
 envsubst '${NGINX_PORT}${PORT}${NGINX_CLIENT_MAX_BODY_SIZE}${ENABLE_SSL}${HTTPS_SERVER_CONF}' < /etc/nginx/nginx.template.conf > /etc/nginx/nginx.conf
 
-# 自动更新
+# 自动更新检查
 cd /
 source /usr/local/bin/mp_update.sh
 cd /app || exit
 
-# 更改 moviepilot userid 和 groupid
+# 用户/权限
 groupmod -o -g "${PGID}" moviepilot
 usermod -o -u "${PUID}" moviepilot
-
-# 更改文件权限
-chown -R moviepilot:moviepilot \
-    "${HOME}" \
-    /app \
-    /public \
-    "${CONFIG_DIR}" \
-    /var/lib/nginx \
-    /var/log/nginx
+chown -R moviepilot:moviepilot "${HOME}" /app /public "${CONFIG_DIR}" /var/lib/nginx /var/log/nginx
 chown moviepilot:moviepilot /etc/hosts /tmp
 
-# 下载浏览器内核
-if [[ "$HTTPS_PROXY" =~ ^https?:// ]] || [[ "$HTTPS_PROXY" =~ ^https?:// ]] || [[ "$PROXY_HOST" =~ ^https?:// ]]; then
+# 浏览器内核
+if [[ "$HTTPS_PROXY" =~ ^https?:// ]] || [[ "$PROXY_HOST" =~ ^https?:// ]]; then
   HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$PROXY_HOST}}" gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
 else
   gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
 fi
 
-# 证书管理
 source /app/docker/cert.sh
 
-# 启动前端nginx服务
-# Patch nginx common.conf - disable aggressive caching for JS/CSS
+# ============ 前端 Nginx ============
+
+# nginx 缓存策略（禁用 JS/CSS 激进缓存）
 if [ -f "/config/nginx_common_patched.conf" ]; then
     cp -f /config/nginx_common_patched.conf /etc/nginx/common.conf
-    INFO "nginx common.conf patched from /config"
-fi
-
-# Patch frontend JS - index bundle + media chunk
-if [ -f "/config/index_patched.js" ]; then
-    cp -f /config/index_patched.js /public/assets/index-BBDD888T.js
-    INFO "Frontend index bundle patched from /config"
-fi
-if [ -f "/config/public_assets_media_patched.js" ]; then
-    cp -f /config/public_assets_media_patched.js /public/assets/media-UW_IXygd_v3.js
-    INFO "Frontend media chunk patched from /config"
+    INFO "nginx common.conf patched"
 fi
 
 INFO "→ 启动前端nginx服务..."
 nginx
 
-# 捕获信号并跳转到函数
 trap 'graceful_exit 130 "signal"' SIGINT
 trap 'graceful_exit 143 "signal"' SIGTERM
 
-# 启动docker http proxy nginx
 if [ -S "/var/run/docker.sock" ]; then
     INFO "→ 启动 Docker Proxy..."
     nginx -c /etc/nginx/docker_http_proxy.conf
-    # 上面nginx是通过root启动的，会将目录权限改成root，所以需要重新再设置一遍权限
-    chown -R moviepilot:moviepilot \
-        /var/lib/nginx \
-        /var/log/nginx
+    chown -R moviepilot:moviepilot /var/lib/nginx /var/log/nginx
 fi
 
-# 设置后端服务权限掩码
 umask "${UMASK}"
 
-# 清除非系统环境导入的变量，保证转移到 dumb-init 的时候，不会带入不必要的环境变量
-INFO "准备为 Python 应用清理的非系统环境导入的变量..."
+# 清理非系统环境变量
+INFO "清理非系统环境导入的变量..."
 if [ ${#VARS_SET_BY_SCRIPT[@]} -gt 0 ]; then
     for var_to_unset in "${VARS_SET_BY_SCRIPT[@]}"; do
-        # 再次确认变量确实存在于当前环境中（虽然理论上应该存在）
         if eval "[ -n \"\${${var_to_unset}+x}\" ]"; then
             INFO "取消设置环境变量: ${var_to_unset}"
             unset "${var_to_unset}"
@@ -335,67 +252,29 @@ else
     INFO "没有由非系统环境导入的变量需要清理。"
 fi
 
-# 启动后端服务
-# FastAPI compatibility fix: 0.115.7+ removed on_startup, force downgrade
-INFO "Fixing FastAPI compatibility..."
-"${VENV_PATH}/bin/pip" install -q 'fastapi==0.115.6' 'starlette==0.41.0' 2>&1 | tail -3
-INFO "FastAPI fix applied."
+# ============ 运行时补丁（插件安装） ============
 
-# Install AdultSubscribe plugin from /config to system plugins (remove first, then copy)
-if [ -f "/config/plugins/v2/adultsubscribe/__init__.py" ]; then
-    rm -rf /app/app/plugins/adultsubscribe
-    mkdir -p /app/app/plugins/adultsubscribe
-    cp -f /config/plugins/v2/adultsubscribe/__init__.py /app/app/plugins/adultsubscribe/__init__.py
-    INFO "AdultSubscribe plugin installed from /config"
-elif [ -f "/tmp/mp_tmp/__init__.py" ]; then
-    rm -rf /app/app/plugins/adultsubscribe
-    mkdir -p /app/app/plugins/adultsubscribe
-    cp -f /tmp/mp_tmp/__init__.py /app/app/plugins/adultsubscribe/__init__.py
-    INFO "AdultSubscribe plugin installed from /tmp"
-fi
+# 插件从 /config 安装到系统目录（运行时必须，插件可能从外部更新）
+_install_plugin() {
+    local name="$1" src="$2"
+    if [ -d "/config/plugins/v2/${src}" ]; then
+        rm -rf "/app/app/plugins/${name}"
+        cp -a "/config/plugins/v2/${src}" "/app/app/plugins/${name}"
+        rm -rf "/app/app/plugins/${name}/__pycache__"
+        INFO "Plugin ${name} installed"
+    fi
+}
+_install_plugin "adultsubscribe" "adultsubscribe"
+_install_plugin "metatubesource" "metatubesource"
+_install_plugin "bytemusediscover" "bytemusediscover"
 
-# Patch tmdb.py at startup (intercept non-numeric tmdbid for bytemuse)
-if [ -f "/config/tmdb_patched.py" ]; then
-    cp -f /config/tmdb_patched.py /app/app/api/endpoints/tmdb.py
-    rm -f /app/app/api/endpoints/__pycache__/tmdb.cpython-312.pyc
-    INFO "tmdb.py patched from /config"
-fi
-
-# Patch media.py at startup (debug endpoint + metatube detail support)
-if [ -f "/config/media_patched.py" ]; then
-    cp -f /config/media_patched.py /app/app/api/endpoints/media.py
-    rm -f /app/app/api/endpoints/__pycache__/media.cpython-312.pyc
-    INFO "media.py patched from /config"
-fi
-
-# Patch search.py at startup (strip metatube prefix)
-if [ -f "/config/search_patched.py" ]; then
-    cp -f /config/search_patched.py /app/app/api/endpoints/search.py
-    rm -f /app/app/api/endpoints/__pycache__/search.cpython-312.pyc
-    INFO "search.py patched from /config"
-fi
-
-# Install MetatubeSource plugin from /config to system plugins
-if [ -d "/config/plugins/v2/metatubesource" ]; then
-    rm -rf /app/app/plugins/metatubesource
-    cp -a /config/plugins/v2/metatubesource /app/app/plugins/metatubesource
-    rm -rf /app/app/plugins/metatubesource/__pycache__
-    INFO "MetatubeSource plugin installed from /config"
-fi
-
-# Install ByteMuseDiscover plugin from /config to system plugins
-if [ -d "/config/plugins/v2/bytemusediscover" ]; then
-    rm -rf /app/app/plugins/bytemusediscover
-    cp -a /config/plugins/v2/bytemusediscover /app/app/plugins/bytemusediscover
-    rm -rf /app/app/plugins/bytemusediscover/__pycache__
-    INFO "ByteMuseDiscover plugin installed from /config"
-fi
-
-# Inject stills gallery script into index.html for bytemuse source
-if [ -f "/config/stills-inject.js" ]; then
+# 前端注入脚本（index.html 每次启动是镜像原始文件，需重新注入）
+if [ -f "/config/stills-inject.js" ] && [ -f "/config/inject_stills.py" ]; then
     python3 /config/inject_stills.py
-    INFO "Stills injection applied to /public/index.html"
+    INFO "Frontend stills injection applied"
 fi
+
+# ============ 启动后端 ============
 
 INFO "Starting backend service..."
 if [ "${START_NOGOSU:-false}" = "true" ]; then
@@ -405,12 +284,6 @@ else
 fi
 PYTHON_PID=$!
 
-# 等待 Python 进程退出。
-# 如果收到信号，trap 会中断 wait，并执行 graceful_exit。
-# 如果 Python 正常退出，wait 会结束，然后我们手动调用 graceful_exit。
 wait "$PYTHON_PID" 2>/dev/null
 exit_code=$?
-
-# 如果 Python 自己退出了（非信号触发），执行清理
 graceful_exit "$exit_code" "python_exit"
-
