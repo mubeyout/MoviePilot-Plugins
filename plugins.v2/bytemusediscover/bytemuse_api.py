@@ -373,6 +373,10 @@ class ByteMuseApiClient:
             if not data:
                 return None
 
+            # 兼容新旧 API 响应格式
+            if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
+                data = data["data"]
+
             logger.debug(f"ByteMuse search_by_code 搜索成功: 找到 {len(data.get('codes', []))} 条结果")
             return data
 

@@ -1,0 +1,32 @@
+services:
+  moviepilot:
+    image: jxxghp/moviepilot-v2:latest
+    container_name: MoviePilot
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /mnt/nvme0n1p1/Configs/MoviePilot:/config
+      - /mnt/nvme0n1p1/Configs/MoviePilot/cache:/moviepilot/.cache
+      - /mnt:/mnt
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/nvme0n1p1/Configs/MoviePilot/mtorrent.py:/app/app/modules/indexer/spider/mtorrent.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/spider_init.py:/app/app/modules/indexer/spider/__init__.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/indexer_init.py:/app/app/modules/indexer/__init__.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/chain_init.py:/app/app/chain/__init__.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/chain_search.py:/app/app/chain/search.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/site_fixed2.py:/tmp/site_patched.py:ro
+      - /mnt/nvme0n1p1/Configs/MoviePilot/patches/entrypoint.sh:/entrypoint.sh:ro
+    environment:
+      - PUID=0
+      - PGID=0
+      - NGINX_PORT=3003
+      - MOVIEPILOT_AUTO_UPDATE=false
+      - GITHUB_TOKEN=<YOUR_GITHUB_TOKEN>
+      - SUPERUSER=mubey
+      - PROXY_HOST=http://10.0.0.1:7890
+      - PLUGIN_LOCAL_REPO_PATHS=/config/plugins
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"

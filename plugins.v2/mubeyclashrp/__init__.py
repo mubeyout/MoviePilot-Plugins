@@ -147,7 +147,9 @@ class MubeyClashRP(_PluginBase):
         # Accessing subscription_info property triggers load from DB.
         try:
             sub_info_map = self.state.subscription_info
-            sub_info_map.update(self.state.config.sub_links)
+            # Fixed: call SubscriptionsInfo.update with explicit self, not dict.update()
+            from .models.api import SubscriptionsInfo
+            SubscriptionsInfo.update(sub_info_map, self.state.config.sub_links)
             self.state.subscription_info = sub_info_map
         except Exception as e:
             logger.error(f"初始化订阅信息失败: {e}")
@@ -156,7 +158,7 @@ class MubeyClashRP(_PluginBase):
             try:
                 # 尝试创建空的新订阅信息
                 new_sub_info = SubscriptionsInfo()
-                new_sub_info.update(self.state.config.sub_links)
+                SubscriptionsInfo.update(new_sub_info, self.state.config.sub_links)
                 self.state.subscription_info = new_sub_info
                 logger.info("已创建新的订阅信息对象")
             except Exception as retry_err:
