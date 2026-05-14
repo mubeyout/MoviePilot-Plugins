@@ -1,0 +1,6 @@
+# .dockerignore
+.git
+.DS_Store
+__pycache__
+*.pyc
+plugins.v2/
