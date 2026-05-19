@@ -1,4 +1,5 @@
 from typing import Any, List, Dict, Tuple
+import json
 
 from app import schemas
 from app.core.config import settings
@@ -209,11 +210,12 @@ class ByteMuseDiscover(_PluginBase):
                 "description": "获取热门推荐作品（List[MediaInfo]格式）",
             },
             {
-                "path": "/bytemuse_similar/{mediaid}",
-                "endpoint": self.bytemuse_similar,
+                "path": "/bytemuse_detail/{mediaid}",
+                "endpoint": self.bytemuse_detail_public,
                 "methods": ["GET"],
-                "summary": "ByteMuse类似推荐",
-                "description": "获取同演员作品（List[MediaInfo]格式）",
+                "summary": "ByteMuse媒体详情（匿名）",
+                "description": "获取剧照、同演员作品、今日上新，供前端注入使用",
+                "allow_anonymous": True,
             }
         ]
 
@@ -951,61 +953,122 @@ class ByteMuseDiscover(_PluginBase):
         logger.info(f"bytemuse_recommend: 返回 {len(result)} 个推荐作品")
         return result
 
-    def bytemuse_similar(self, mediaid: str) -> List[Dict[str, Any]]:
+    def bytemuse_detail_public(self, mediaid: str) -> Dict[str, Any]:
         """
-        获取同演员作品（List[MediaInfo] 格式，供前端 MediaCardSlideView 使用）
-        通过当前作品的主演员名，直接搜索 ByteMuse 获取同演员的其他作品
+        匿名端点：获取媒体详情数据（剧照 + 同演员作品 + 今日上新）
+        供前端 stills-inject.js 直接调用，无需认证
 
-        :param mediaid: 媒体ID
-        :return: List[MediaInfo] 格式的作品列表
+        :param mediaid: 番号（如 MIRD-277）
+        :return: {stills: [...], similar: [...], recommendations: [...]}
         """
-        logger.info(f"bytemuse_similar 被调用: mediaid={mediaid}")
-
-        # 提取番号
         code = mediaid.replace("bytemuse:", "", 1) if mediaid.startswith("bytemuse:") else mediaid
         if not code:
-            return []
+            return {"stills": [], "similar": [], "recommendations": []}
 
-        current_code = code.upper()
+        if not self._api_client:
+            return {"stills": [], "similar": [], "recommendations": []}
 
-        # 获取当前作品的演员
-        result = self._api_client.search_by_code(query=code)
-        if not result:
-            return []
+        try:
+            # 1. 获取当前番号详情（剧照 + 演员列表）
+            result = self._api_client.search_by_code(query=code)
+            if not result:
+                return {"stills": [], "similar": [], "recommendations": []}
 
-        actors_data = result.get("actors", [])
-        actor_names = []
-        for actor in actors_data:
-            if isinstance(actor, dict) and actor.get("name"):
-                actor_names.append(actor.get("name"))
+            codes = result.get("codes", [])
+            actors_data = result.get("actors", [])
+            if not codes:
+                return {"stills": [], "similar": [], "recommendations": []}
 
-        if not actor_names:
-            return []
+            movie_data = codes[0]
 
-        # 用主演员名搜索，获取同演员作品
-        similar = []
-        seen_codes = {current_code}
-        for actor_name in actor_names[:3]:  # 最多查 3 个演员
+            # 2. 剧照
+            stills = []
+            still_photo_str = movie_data.get("still_photo") or ""
+            if still_photo_str:
+                from urllib.parse import quote
+                for s in still_photo_str.split(','):
+                    s = s.strip()
+                    if s and s.startswith("http"):
+                        stills.append(f"/api/v1/plugin/ByteMuseDiscover/image?url={quote(s, safe='')}")
+
+            # 3. 同演员作品（similar）
+            similar = []
+            main_actor = ""
+            if actors_data and isinstance(actors_data[0], dict):
+                main_actor = actors_data[0].get("name", "")
+
+            if main_actor:
+                try:
+                    actor_result = self._api_client.search_by_code(query=main_actor)
+                    if actor_result:
+                        actor_codes = actor_result.get("codes", [])
+                        current_code = code.upper()
+                        for c in actor_codes[:12]:
+                            c_code = (c.get("code", "") or "")
+                            if c_code and c_code.upper() != current_code:
+                                c_poster = c.get("poster") or c.get("banner") or ""
+                                c_title = (c.get("cn_title") or c.get("title") or c_code)
+                                similar.append({
+                                    "media_id": c_code,
+                                    "title": c_title,
+                                    "poster_path": c_poster,
+                                })
+                except Exception as e:
+                    logger.debug(f"bytemuse_detail_public: similar fetch failed: {e}")
+
+            # 4. 今日上新（用于"类似"栏）- 用 http.client 登录+请求
+            monthly = []
             try:
-                actor_result = self._api_client.search_by_code(query=actor_name)
-                if not actor_result:
-                    continue
-                codes = actor_result.get("codes", [])
-                for item in codes:
-                    if not isinstance(item, dict):
-                        continue
-                    item_code = (item.get("code") or "").upper()
-                    if item_code in seen_codes:
-                        continue
-                    seen_codes.add(item_code)
-                    media = self._movie_to_media_dict(item)
-                    if media:
-                        similar.append(media.model_dump())
+                current_code_upper = code.upper()
+                similar_codes = set(s['media_id'].upper() for s in similar)
+                import http.client as _hc
+                import urllib.parse as _up
+                # Login
+                _params = _up.urlencode({'username': self._bytemuse_username, 'password': self._bytemuse_password, 'token_key': ''})
+                _conn = _hc.HTTPConnection('10.0.0.1', 3750, timeout=5)
+                _conn.request('GET', '/api/v1/login?' + _params)
+                _login_data = json.loads(_conn.getresponse().read())
+                _jwt = (_login_data.get('data') or {}).get('token', '')
+                _conn.close()
+                if _jwt:
+                    _conn2 = _hc.HTTPConnection('10.0.0.1', 3750, timeout=5)
+                    _body = json.dumps({'page': 1, 'page_size': 15}).encode()
+                    _conn2.request('POST', '/api/v1/codes/release_today', body=_body, headers={
+                        'Authorization': 'Bearer ' + _jwt,
+                        'Content-Type': 'application/json'
+                    })
+                    _new_resp = _conn2.getresponse()
+                    _new_data = json.loads(_new_resp.read())
+                    _conn2.close()
+                    new_items = _new_data if isinstance(_new_data, list) else (_new_data.get('data') or [])
+                    for item in new_items:
+                        if not isinstance(item, dict):
+                            continue
+                        item_code = (item.get('code', '') or '').upper()
+                        if not item_code or item_code == current_code_upper or item_code in similar_codes:
+                            continue
+                        item_poster = item.get('poster') or item.get('banner') or ''
+                        item_title = (item.get('cn_title') or item.get('title') or item_code)
+                        monthly.append({
+                            'media_id': item_code,
+                            'title': item_title,
+                            'poster_path': item_poster,
+                        })
+                        if len(monthly) >= 12:
+                            break
             except Exception as e:
-                logger.debug(f"bytemuse_similar: 搜索演员 {actor_name} 失败: {e}")
+                logger.debug(f"bytemuse_detail_public: new releases fetch failed: {e}")
 
-        logger.info(f"bytemuse_similar: 找到 {len(similar)} 个同演员作品")
-        return similar
+            return {
+                "code": code,
+                "stills": stills,
+                "similar": similar,
+                "monthly": monthly,
+            }
+
+        except Exception as e:
+            logger.error(f"bytemuse_detail_public failed: {e}")
+            return {"stills": [], "similar": [], "recommendations": []}
 
     def recognize_media(self, meta=None, mtype=None, **kwargs):
         """

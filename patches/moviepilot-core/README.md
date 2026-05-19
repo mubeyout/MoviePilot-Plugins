@@ -3,7 +3,7 @@
 本目录包含 MoviePilot 的核心补丁文件，用于实现自定义功能（ByteMuse 探索详情、成人内容搜索、前端增强等）。
 
 > **版本对应**: MoviePilot v2.10.2 (`jxxghp/moviepilot:2.10.2`)
-> **更新日期**: 2026-05-14
+> **更新日期**: 2026-05-19
 
 ---
 
@@ -66,32 +66,48 @@
 
 ---
 
-### 11. `stills-inject.js` — 前端注入脚本 (v8)
+### 11. `stills-inject.js` — 前端注入脚本 (v13)
 
 **作用**: ByteMuse 详情页增强。
 
 **功能**:
-- **剧照 slider**: 横向滚动展示剧照，点击弹出灯箱（◀▶ 按钮 + 键盘左右 + 触摸滑动 + 缩略图条）
-- **类似作品 slider**: 后端返回的 similar 数据
-- 自动隐藏原生空的"类似"slider
+- **剧照 slider**: 横向滚动展示剧照，点击弹出灯箱（◀▶ 按钮 + 键盘左右 + 缩略图条），注入到 `media-overview`
+- **推荐**: 同演员作品（排除当前作品），填充到 MoviePilot 原生"推荐"slider
+- **类似**: 今日上新内容，填充到 MoviePilot 原生"类似"slider
+- 不再隐藏原生 slider，而是检测到空 slider 后填充内容
 
 **技术方案**:
-- JSON.parse hook 拦截 MoviePilot API 响应（识别 `source: bytemuse`）
-- 轮询 `window.__bmData` 等待数据就绪后注入 DOM
-- 支持SPA 路由切换（hashchange 监听）
+- 直连插件匿名 API `/api/v1/plugin/ByteMuseDiscover/bytemuse_detail/{mediaid}`
+- 不依赖 JSON.parse hook 或 MoviePilot media API
+- hashchange 后 300ms 发请求，数据到达即注入（首次进入即可显示）
+- 等待 Vue 渲染原生 slider 后再填充（重试机制，最多 12 秒）
 
 ---
 
 ### 12. `inject_stills.py` — 注入辅助脚本
 
-**作用**: 将 hook 和 loader 注入到 index.html。
+**作用**: 将 loader 注入到 index.html。
 
 **实现**:
-- 在 `<head>` 内注入 inline `<script>` 安装 JSON.parse hook（确保在 Vue 应用之前执行）
+- 在 `<head>` 内注入 inline `<script>` 安装 JSON.parse hook（向后兼容，v13 不再依赖但保留）
 - 在 `</body>` 前注入 `<script src="/stills-inject.js?v=timestamp">`（外部加载，绕过 SW 缓存）
 - 将 stills-inject.js 复制到 `/public/` 目录（nginx root）
 
 **重要**: 前端文件（stills-inject.js、inject_stills.py）必须放在宿主机 `/config` 挂载目录下，因为 docker-compose 的 volume 挂载会遮盖镜像内 COPY 的文件。
+
+### 13. ByteMuseDiscover 插件增强
+
+**新增匿名 API**: `/api/v1/plugin/ByteMuseDiscover/bytemuse_detail/{mediaid}`（`allow_anonymous: True`）
+
+**返回数据**:
+- `stills`: 剧照列表（图片代理 URL）
+- `similar`: 同演员作品（排除当前作品，最多 12 条）
+- `monthly`: 今日上新内容（排除当前作品和同演员作品，最多 12 条）
+
+**技术细节**:
+- ByteMuse 月榜单 API 数据为空（`/api/v1/ranks?type=monthly` 返回 `[]`），"类似"栏使用今日上新替代
+- 使用 `http.client` + JWT 登录（`RequestUtils` 在 MoviePilot 进程内被代理干扰）
+- `import json` 必须显式声明（插件文件顶部无此 import）
 
 ---
 
