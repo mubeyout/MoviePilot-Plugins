@@ -1059,11 +1059,23 @@ class ByteMuseDiscover(_PluginBase):
             except Exception as e:
                 logger.debug(f"bytemuse_detail_public: new releases fetch failed: {e}")
 
+            # 5. 简介 + 演员列表
+            description = movie_data.get("description") or ""
+            actors_list = []
+            for actor in (actors_data or []):
+                if isinstance(actor, dict):
+                    actors_list.append({
+                        "name": actor.get("name", ""),
+                        "photo": actor.get("photo", ""),
+                    })
+
             return {
                 "code": code,
                 "stills": stills,
                 "similar": similar,
                 "monthly": monthly,
+                "description": description,
+                "actors": actors_list,
             }
 
         except Exception as e:

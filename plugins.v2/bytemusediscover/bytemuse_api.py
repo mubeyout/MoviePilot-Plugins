@@ -194,10 +194,18 @@ class ByteMuseApiClient:
                 return self._get_recommend(page, page_size)
             elif discover_type.startswith("rankings_"):
                 rank_type = discover_type.replace("rankings_", "")
-                return self._get_ranks(rank_type, page_size)
+                result = self._get_ranks(rank_type, page_size)
+                if not result:
+                    logger.info(f"ByteMuse {rank_type}榜无数据，回退到 release_today")
+                    result = self._get_release_today(page, page_size)
+                return result
             elif discover_type.startswith("studio_"):
                 studio = discover_type.replace("studio_", "")
-                return self._get_studio_ranks(studio, page_size)
+                result = self._get_studio_ranks(studio, page_size)
+                if not result:
+                    logger.info(f"ByteMuse {studio}厂牌无数据，回退到 release_today")
+                    result = self._get_release_today(page, page_size)
+                return result
             else:
                 logger.warning(f"不支持的探索类型: {discover_type}")
                 return None

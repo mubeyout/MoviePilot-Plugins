@@ -147,9 +147,12 @@ class MubeyClashRP(_PluginBase):
         # Accessing subscription_info property triggers load from DB.
         try:
             sub_info_map = self.state.subscription_info
-            # Fixed: call SubscriptionsInfo.update with explicit self, not dict.update()
+            # 确保 sub_info_map 是 SubscriptionsInfo 实例（DB 反序列化可能返回 dict）
             from .models.api import SubscriptionsInfo
-            SubscriptionsInfo.update(sub_info_map, self.state.config.sub_links)
+            if not isinstance(sub_info_map, SubscriptionsInfo):
+                sub_info_map = SubscriptionsInfo.model_validate(sub_info_map if isinstance(sub_info_map, dict) else {})
+                self.state.subscription_info = sub_info_map
+            sub_info_map.update(self.state.config.sub_links)
             self.state.subscription_info = sub_info_map
         except Exception as e:
             logger.error(f"初始化订阅信息失败: {e}")

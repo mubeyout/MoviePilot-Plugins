@@ -1,5 +1,5 @@
 (function(){
-console.log('[BM] v13 LOADED');
+console.log('[BM] v16 LOADED');
 
 var _done={};
 var _pending=null;
@@ -41,24 +41,48 @@ function doInject(data){
   var stills=data.stills||[];
   var similar=data.similar||[];
   var monthly=data.monthly||[];
+  var description=data.description||'';
+  var actors=data.actors||[];
 
-  // 1. 剧照 → inject into media-overview (keep as bytemuse-section)
+  // 1. Fill overview-left: description + actor credits
+  var overviewLeft=ov.querySelector('.media-overview-left');
+  if(overviewLeft){
+    // Fill description
+    var pEl=overviewLeft.querySelector('p');
+    if(pEl&&description){
+      pEl.textContent=description;
+      pEl.style.whiteSpace='pre-wrap';
+    }
+    // Fill actor credits
+    var crewUl=overviewLeft.querySelector('.media-crew');
+    if(crewUl&&actors.length){
+      var crewHtml='';
+      for(var a=0;a<actors.length;a++){
+        var actor=actors[a];
+        if(!actor.name)continue;
+        crewHtml+='<li><span class="media-crew-name">'+actor.name+'</span></li>';
+      }
+      crewUl.innerHTML=crewHtml;
+    }
+  }
+
+  // 2. 剧照 → insert AFTER media-overview (not inside)
   if(stills.length){
-    ov.insertAdjacentHTML('beforeend',makeSlider('\u5267\u7167',stills,true));
-    ov.querySelectorAll('.bm-still').forEach(function(el){
+    ov.insertAdjacentHTML('afterend',makeSlider('\u5267\u7167',stills,true));
+    ov.parentElement.querySelectorAll('.bm-still').forEach(function(el){
       el.addEventListener('click',function(){lbOpen(parseInt(el.dataset.i),stills)});
     });
     ov.dataset.bmStills='1';
     console.log('[BM] stills:',stills.length);
   }
 
-  // 2. 推荐 → fill TMDB native "推荐" slider
+  // 3. 推荐 → fill TMDB native "推荐" slider
   if(similar.length){
     fillNativeSlider('\u63a8\u8350',similar);
     console.log('[BM] recommend:',similar.length);
   }
 
-  // 3. 类似 → fill TMDB native "类似" slider
+  // 4. 类似 → fill TMDB native "类似" slider
   if(monthly.length){
     fillNativeSlider('\u7c7b\u4f3c',monthly);
     console.log('[BM] similar:',monthly.length);
@@ -97,6 +121,7 @@ function buildCards(items){
     var t=(it.title||'').length>28?(it.title||'').substring(0,28)+'...':(it.title||'');
     var p=it.poster_path||it.poster||'';
     var mid=it.media_id||it.id||'';
+    if(mid&&!/^metatube_search:/.test(mid))mid='metatube_search:'+mid;
     html+='<div style="width:9rem;flex-shrink:0"><a href="#/media?mediaid='+encodeURIComponent(mid)+'&type=\u7535\u5f71" style="text-decoration:none;color:inherit">';
     html+='<div class="v-card v-theme--dark v-card--density-default elevation-0 rounded-lg v-card--variant-elevated outline-none overflow-hidden" style="width:9rem;cursor:pointer">';
     if(p){
@@ -137,6 +162,7 @@ function makeSlider(title,items,isStill){
       var t=(it.title||'').length>24?(it.title||'').substring(0,24)+'...':(it.title||'');
       var p=it.poster_path||it.poster||'';
       var mid=it.media_id||it.id||'';
+      if(mid&&!/^metatube_search:/.test(mid))mid='metatube_search:'+mid;
       h+='<a href="#/media?mediaid='+encodeURIComponent(mid)+'&type=\u7535\u5f71" style="flex-shrink:0;width:110px;scroll-snap-align:start;text-decoration:none;color:inherit;display:block">';
       h+='<div style="border-radius:.5rem;overflow:hidden">';
       if(p)h+='<img src="'+p+'" style="width:100%;aspect-ratio:2/3;object-fit:cover;display:block" loading="lazy" onerror="this.style.display=\'none\'">';

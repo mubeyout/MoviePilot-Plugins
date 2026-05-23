@@ -973,6 +973,13 @@ class MubeyClashRPService:
             return None, None
         try:
             content = ret.content
+            # 处理 gzip 压缩和编码
+            if isinstance(content, bytes):
+                if content[:2] == b'\x1f\x8b':
+                    import gzip
+                    content = gzip.decompress(content)
+                if isinstance(content, bytes):
+                    content = content.decode('utf-8', errors='replace')
             rs = yaml.safe_load(content)
             if isinstance(rs, str):
                 proxies = Converter().convert_v2ray(content)

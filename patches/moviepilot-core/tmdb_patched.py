@@ -34,11 +34,11 @@ async def tmdb_similar(tmdbid: str,
     """
     根据TMDBID查询类似电影/电视剧，type_name: 电影/电视剧
     """
-    # Non-numeric tmdbid: intercept and return ByteMuse similar data
+    # Non-numeric tmdbid: return empty (bytemuse-section handles this)
     try:
         int(tmdbid)
     except (ValueError, TypeError):
-        return _bytemuse_similar(tmdbid)
+        return []
 
     mediatype = MediaType(type_name)
     if mediatype == MediaType.MOVIE:
@@ -59,11 +59,11 @@ async def tmdb_recommend(tmdbid: str,
     """
     根据TMDBID查询推荐电影/电视剧，type_name: 电影/电视剧
     """
-    # Non-numeric tmdbid: intercept and return ByteMuse similar data
+    # Non-numeric tmdbid: return empty (bytemuse-section handles this)
     try:
         int(tmdbid)
     except (ValueError, TypeError):
-        return _bytemuse_similar(tmdbid)
+        return []
 
     mediatype = MediaType(type_name)
     if mediatype == MediaType.MOVIE:
@@ -237,6 +237,7 @@ def _bytemuse_credits(code):
 
 
 def _bytemuse_similar(code):
+    """Get same-actor works (for TMDB '类似' endpoint)."""
     _, works = _bm_get_actors_and_works(code)
     result = []
     for c in works[:12]:
@@ -247,7 +248,7 @@ def _bytemuse_similar(code):
             title = (c.get('cn_title', '') or c.get('title', '') or c_code) if isinstance(c, dict) else c_code
             result.append({
                 'id': c_code,
-                'tmdb_id': None,
+                'tmdb_id': c_code,
                 'title': title,
                 'poster_path': poster or banner,
                 'backdrop_path': banner,
@@ -257,6 +258,132 @@ def _bytemuse_similar(code):
                 'type': '电影',
                 'year': (c.get('create_time', '') or '')[:4] if isinstance(c, dict) else '',
                 'media_id': c_code,
-                'mediaid_prefix': 'metatube_search',
+                'mediaid_prefix': 'metatube',
             })
     return result
+
+
+def _bytemuse_recommend(code):
+    """Get today's new releases excluding same-actor works (for TMDB '推荐' endpoint)."""
+    try:
+        # Get current actor
+        req = urllib.request.Request(
+            _bm_internal_url + f'?query={urllib.parse.quote(code)}',
+            headers={'Content-Type': 'application/json'},
+            method='GET'
+        )
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as r:
+            current_data = json.loads(r.read())
+
+        current_actors = set()
+        actors_data = current_data.get('data', {}).get('actors') or []
+        if actors_data and isinstance(actors_data[0], dict):
+            main_actor = actors_data[0].get('name', '')
+            if main_actor:
+                current_actors.add(main_actor)
+        # Get new releases
+        req2 = urllib.request.Request(
+            'http://10.0.0.1:3750/api/v1/codes/release_today',
+            data=json.dumps({'page': 1, 'page_size': 20}).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        ctx2 = ssl.create_default_context()
+        with urllib.request.urlopen(req2, context=ctx2, timeout=8) as r:
+            new_data = json.loads(r.read())
+        items = new_data if isinstance(new_data, list) else (new_data.get('data') or [])
+        result = []
+        for c in items[:12]:
+            if not isinstance(c, dict):
+                continue
+            c_code = c.get('code', '') or ''
+            if not c_code or c_code.upper() == code.upper():
+                continue
+            # Exclude same-actor works
+            item_actors = c.get('actors') or []
+            actor_names = set()
+            for a in item_actors:
+                if isinstance(a, dict) and a.get('name'):
+                    actor_names.add(a.get('name'))
+            if current_actors & actor_names:
+                continue
+            poster = c.get('poster', '') or c.get('banner', '') or ''
+            title = (c.get('cn_title', '') or c.get('title', '') or c_code)
+            result.append({
+                'id': c_code,
+                'tmdb_id': c_code,
+                'title': title,
+                'poster_path': poster,
+                'backdrop_path': c.get('banner', '') or '',
+                'overview': '',
+                'vote_average': 0,
+                'source': 'bytemuse',
+                'type': '电影',
+                'year': (c.get('create_time', '') or '')[:4],
+                'media_id': c_code,
+                'mediaid_prefix': 'metatube',
+            })
+        return result
+    except Exception:
+        return []
+
+        current_actors = set()
+        actors_data = current_data.get('data', {}).get('actors') or []
+        if actors_data and isinstance(actors_data[0], dict):
+            main_actor = actors_data[0].get('name', '')
+            if main_actor:
+                current_actors.add(main_actor)
+
+        # Get new releases
+        req2 = urllib.request.Request(
+            'http://10.0.0.1:3750/api/v1/codes/release_today',
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        body = json.dumps({'page': 1, 'page_size': 20}).encode('utf-8')
+        req2 = urllib.request.Request(
+            'http://10.0.0.1:3750/api/v1/codes/release_today',
+            data=body,
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        ctx2 = ssl.create_default_context()
+        with urllib.request.urlopen(req2, context=ctx2, timeout=8) as r:
+            new_data = json.loads(r.read())
+
+        items = new_data if isinstance(new_data, list) else (new_data.get('data') or [])
+        result = []
+        for c in items[:12]:
+            if not isinstance(c, dict):
+                continue
+            c_code = c.get('code', '') or ''
+            if not c_code or c_code.upper() == code.upper():
+                continue
+            # Exclude same-actor works
+            item_actors = c.get('actors') or []
+            actor_names = set()
+            for a in item_actors:
+                if isinstance(a, dict) and a.get('name'):
+                    actor_names.add(a.get('name'))
+            if current_actors & actor_names:
+                continue
+            poster = c.get('poster', '') or c.get('banner', '') or ''
+            title = (c.get('cn_title', '') or c.get('title', '') or c_code)
+            result.append({
+                'id': c_code,
+                'tmdb_id': None,
+                'title': title,
+                'poster_path': poster,
+                'backdrop_path': c.get('banner', '') or '',
+                'overview': '',
+                'vote_average': 0,
+                'source': 'bytemuse',
+                'type': '电影',
+                'year': (c.get('create_time', '') or '')[:4],
+                'media_id': c_code,
+                'mediaid_prefix': 'metatube_search',
+            })
+        return result
+    except Exception:
+        return []
