@@ -111,6 +111,10 @@ class ByteMuseDiscover(_PluginBase):
     # 私有属性
     _enabled = False
 
+    @classmethod
+    def get_state(cls) -> bool:
+        return cls._enabled
+
     # ByteMuse API 配置
     _bytemuse_base_url: str = ""
     _bytemuse_username: str = ""
