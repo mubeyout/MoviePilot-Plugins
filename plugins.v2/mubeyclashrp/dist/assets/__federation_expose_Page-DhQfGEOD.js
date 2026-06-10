@@ -13814,7 +13814,7 @@ const _sfc_main = /* @__PURE__ */ _defineComponent({
                     }, {
                       default: _withCtx(() => [
                         _createElementVNode("img", {
-                          src: `/api/v1/plugin/file/clashruleprovider/dist${_unref(MetaLogo)}`,
+                          src: `/api/v1/plugin/file/mubeyclashrp/dist${_unref(MetaLogo)}`,
                           alt: "icon",
                           style: { "width": "100%", "height": "100%" }
                         }, null, 8, _hoisted_2)

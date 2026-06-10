@@ -1289,7 +1289,7 @@ log-level: silent`
                 default: _withCtx(() => _cache[64] || (_cache[64] = [
                   _createTextVNode(" 配置说明参考: "),
                   _createElementVNode("a", {
-                    href: "https://github.com/wumode/MoviePilot-Plugins/tree/main/plugins.v2/clashruleprovider/README.md",
+                    href: "https://github.com/wumode/MoviePilot-Plugins/tree/main/plugins.v2/mubeyclashrp/README.md",
                     target: "_blank",
                     style: { "text-decoration": "underline" }
                   }, "README", -1)

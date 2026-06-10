@@ -15494,7 +15494,7 @@ const _sfc_main$1 = /* @__PURE__ */ _defineComponent$1({
                 _createElementVNode("div", _hoisted_2, [
                   clashInfo.value.version.meta ? (_openBlock$1(), _createBlock$1(_component_v_img, {
                     key: 0,
-                    src: `/api/v1/plugin/file/clashruleprovider/dist${_unref(MetaLogo)}`,
+                    src: `/api/v1/plugin/file/mubeyclashrp/dist${_unref(MetaLogo)}`,
                     alt: "Logo",
                     "max-height": "48",
                     contain: ""

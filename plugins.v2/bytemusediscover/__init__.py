@@ -120,6 +120,9 @@ class ByteMuseDiscover(_PluginBase):
     # API 客户端
     _api_client: ByteMuseApiClient = None
 
+    # JavBus API 配置
+    _javbus_api_base: str = ""
+
     @staticmethod
     def _proxy_image_url(url: str) -> str:
         """
@@ -157,8 +160,10 @@ class ByteMuseDiscover(_PluginBase):
             else:
                 logger.warning("ByteMuse API 地址未配置")
 
-    def get_state(self) -> bool:
-        return self._enabled
+            # 读取 JavBus API 配置
+            self._javbus_api_base = config.get("javbus_api_base", "")
+            if self._javbus_api_base:
+                logger.info(f"JavBus API 已配置: {self._javbus_api_base}")
 
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
@@ -216,7 +221,14 @@ class ByteMuseDiscover(_PluginBase):
                 "summary": "ByteMuse媒体详情（匿名）",
                 "description": "获取剧照、同演员作品、今日上新，供前端注入使用",
                 "allow_anonymous": True,
-            }
+            },
+            {
+                "path": "/javbus_discover",
+                "endpoint": self.javbus_discover,
+                "methods": ["GET"],
+                "summary": "JavBus探索数据",
+                "description": "JavBus搜索和排行榜数据",
+            },
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -441,6 +453,59 @@ class ByteMuseDiscover(_PluginBase):
                         "content": [
                             {
                                 "component": "VCardItem",
+                                "props": {"class": "px-6 pb-0"},
+                                "content": [
+                                    {
+                                        "component": "VCardTitle",
+                                        "props": {"class": "d-flex align-center text-h6"},
+                                        "content": [
+                                            {"component": "VIcon", "props": {"style": "color: #ff9800;", "class": "mr-2"}, "text": "mdi-magnify"},
+                                            {"component": "span", "text": "JavBus 数据源"}
+                                        ]
+                                    }
+                                ]
+                            },
+                            {"component": "VDivider"},
+                            {
+                                "component": "VCardText",
+                                "props": {"class": "px-6"},
+                                "content": [
+                                    {
+                                        "component": "VRow",
+                                        "content": [
+                                            {
+                                                "component": "VCol",
+                                                "props": {"cols": 12},
+                                                "content": [
+                                                    {
+                                                        "component": "VTextField",
+                                                        "props": {
+                                                            "model": "javbus_api_base",
+                                                            "label": "JavBus API 地址",
+                                                            "placeholder": "http://10.0.0.1:8922",
+                                                            "variant": "outlined",
+                                                            "density": "compact",
+                                                            "hint": "javbus-api Docker 服务地址，启用后将额外注册 JavBus 搜索和排行榜探索源"
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VCard",
+                        "props": {
+                            "variant": "flat",
+                            "class": "mt-3",
+                            "color": "surface"
+                        },
+                        "content": [
+                            {
+                                "component": "VCardItem",
                                 "props": {
                                     "class": "px-6 pb-0"
                                 },
@@ -523,6 +588,7 @@ class ByteMuseDiscover(_PluginBase):
             "bytemuse_username": "",
             "bytemuse_password": "",
             "bytemuse_api_token": "",
+            "javbus_api_base": "",
         }
 
     def get_page(self) -> List[dict]:
@@ -572,6 +638,131 @@ class ByteMuseDiscover(_PluginBase):
         except Exception as e:
             logger.error(f"图片代理失败: {str(e)}")
             return {"error": str(e)}, 500
+
+    # ==================== JavBus 数据源 ====================
+
+    def _javbus_get(self, path: str, timeout: int = 10) -> dict:
+        """调用 javbus-api 获取数据"""
+        if not self._javbus_api_base:
+            return {}
+        import http.client as _hc
+        try:
+            host = self._javbus_api_base.replace("http://", "").replace("https://", "").split(":")[0]
+            port = int(self._javbus_api_base.split(":")[-1]) if ":" in self._javbus_api_base else 80
+            conn = _hc.HTTPConnection(host, port, timeout=timeout)
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            data = json.loads(resp.read())
+            conn.close()
+            return data
+        except Exception as e:
+            logger.error(f"[JAVBUS] API 请求失败: {e}")
+            return {}
+
+    def _javbus_detail_public(self, code: str) -> Dict[str, Any]:
+        """JavBus 详情（供 stills-inject.js 调用）"""
+        from urllib.parse import quote as _mquote
+        if not code:
+            return {"stills": [], "similar": [], "monthly": [], "description": "", "actors": []}
+        try:
+            d = self._javbus_get(f"/api/movies/{_mquote(code)}", timeout=15)
+            if not d:
+                return {"stills": [], "similar": [], "monthly": [], "description": "", "actors": []}
+
+            stills = []
+            for s in (d.get('samples', []) or [])[:15]:
+                if isinstance(s, dict):
+                    src = s.get('src', '') or s.get('thumbnail', '')
+                    if src:
+                        stills.append(self._proxy_image_url(src))
+
+            stars = d.get('stars', []) or []
+            actors_list = [
+                {"name": s.get('name', '') if isinstance(s, dict) else str(s),
+                 "photo": s.get('photo', '') if isinstance(s, dict) else ''}
+                for s in stars[:10]
+            ]
+
+            _parts = [f"番号: {d.get('id', code)}"]
+            if d.get('date'): _parts.append(f"发行日期: {d['date']}")
+            if d.get('director'): _parts.append(f"导演: {d['director']}")
+            if d.get('videoLength'): _parts.append(f"时长: {d['videoLength']}分钟")
+            if stars:
+                _parts.append(f"演员: {', '.join(s.get('name','') if isinstance(s,dict) else str(s) for s in stars[:5])}")
+            if d.get('tags'): _parts.append(f"分类: {', '.join(d['tags'][:10])}")
+            description = '\n'.join(_parts)
+
+            similar = []
+            main_star = actors_list[0].get('name', '') if actors_list else ''
+            if main_star:
+                sim_data = self._javbus_get(f"/api/movies/search?keyword={_mquote(main_star)}&page=1&count=12")
+                for m in (sim_data.get('movies', []) or []):
+                    mid = m.get('id', '')
+                    if mid and mid.upper() != code.upper():
+                        similar.append({
+                            'media_id': mid, 'id': mid,
+                            'title': (m.get('title', '') or mid),
+                            'poster_path': self._proxy_image_url(m.get('img', '') or ''),
+                        })
+                        if len(similar) >= 12:
+                            break
+
+            monthly = []
+            sim_ids = set(s['media_id'].upper() for s in similar)
+            new_data = self._javbus_get('/api/movies?page=1&count=12')
+            for m in (new_data.get('movies', []) or []):
+                mid = m.get('id', '')
+                if mid and mid.upper() != code.upper() and mid.upper() not in sim_ids:
+                    monthly.append({
+                        'media_id': mid, 'id': mid,
+                        'title': (m.get('title', '') or mid),
+                        'poster_path': self._proxy_image_url(m.get('img', '') or ''),
+                    })
+                    if len(monthly) >= 12:
+                        break
+
+            return {'code': code, 'stills': stills, 'similar': similar, 'monthly': monthly,
+                    'description': description, 'actors': actors_list}
+        except Exception as e:
+            logger.error(f"[JAVBUS] _javbus_detail_public 失败: {e}")
+            return {"stills": [], "similar": [], "monthly": [], "description": "", "actors": []}
+
+    @cached(region="javbus_discover", ttl=1800, skip_none=True)
+    def javbus_discover(self, mode: str = "search", keyword: str = "", rank_type: str = "daily",
+                       page: int = 1, count: int = 30) -> List[schemas.MediaInfo]:
+        """JavBus 搜索和排行榜"""
+        if not self._javbus_api_base:
+            return []
+        from urllib.parse import quote
+        try:
+            if mode == "search" and keyword:
+                data = self._javbus_get(f"/api/movies/search?keyword={quote(keyword)}&page={page}&count={count}")
+            else:
+                data = self._javbus_get(f"/api/movies?page={page}&count={count}")
+            movies = data.get('movies', []) or []
+            results = []
+            for m in movies:
+                mid = m.get('id', '')
+                mimg = m.get('img', '') or ''
+                mtitle = m.get('title', '') or mid
+                mdate = (m.get('date', '') or '')[:4] or '2026'
+                mi = schemas.MediaInfo(
+                    type="电影",
+                    title=f"{mid} {mtitle}".strip() if mid not in mtitle else mtitle,
+                    mediaid_prefix="javbus_search" if mode == "search" else "javbus_ranking",
+                    media_id=mid,
+                    poster_path=self._proxy_image_url(mimg) if mimg else '',
+                    year=mdate,
+                )
+                if hasattr(mi, 'source'): mi.source = 'themoviedb'
+                if hasattr(mi, 'original_title'): mi.original_title = mid
+                if hasattr(mi, 'adult'): mi.adult = True
+                results.append(mi)
+            logger.info(f"[JAVBUS] javbus_discover 返回 {len(results)} 条数据 (mode={mode})")
+            return results
+        except Exception as e:
+            logger.error(f"[JAVBUS] javbus_discover 失败: {e}")
+            return []
 
     @cached(region="bytemuse_discover", ttl=1800, skip_none=True)
     def bytemuse_discover(
@@ -957,16 +1148,27 @@ class ByteMuseDiscover(_PluginBase):
         """
         匿名端点：获取媒体详情数据（剧照 + 同演员作品 + 今日上新）
         供前端 stills-inject.js 直接调用，无需认证
-
-        :param mediaid: 番号（如 MIRD-277）
-        :return: {stills: [...], similar: [...], recommendations: [...]}
+        支持 javbus_search:/javbus_ranking: 前缀
         """
-        code = mediaid.replace("bytemuse:", "", 1) if mediaid.startswith("bytemuse:") else mediaid
+        # 解析前缀
+        code = mediaid
+        is_javbus = False
+        for prefix in ("javbus_search:", "javbus_ranking:", "bytemuse:", "metatube_search:"):
+            if code.startswith(prefix):
+                code = code.replace(prefix, "", 1)
+                if prefix.startswith("javbus"):
+                    is_javbus = True
+                break
         if not code:
-            return {"stills": [], "similar": [], "recommendations": []}
+            return {"stills": [], "similar": [], "recommendations": [], "monthly": []}
 
+        # JavBus 数据源
+        if is_javbus and self._javbus_api_base:
+            return self._javbus_detail_public(code)
+
+        # ByteMuse 数据源（原有逻辑）
         if not self._api_client:
-            return {"stills": [], "similar": [], "recommendations": []}
+            return {"stills": [], "similar": [], "recommendations": [], "monthly": []}
 
         try:
             # 1. 获取当前番号详情（剧照 + 演员列表）
@@ -1069,6 +1271,12 @@ class ByteMuseDiscover(_PluginBase):
                         "photo": actor.get("photo", ""),
                     })
 
+            # 6. 完整 MediaInfo（用于前端自主渲染详情页）
+            mediainfo = self._fetch_bytemuse_detail(code)
+            media_info = None
+            if mediainfo:
+                media_info = mediainfo.model_dump() if hasattr(mediainfo, 'model_dump') else dict(mediainfo)
+
             return {
                 "code": code,
                 "stills": stills,
@@ -1076,6 +1284,7 @@ class ByteMuseDiscover(_PluginBase):
                 "monthly": monthly,
                 "description": description,
                 "actors": actors_list,
+                "media_info": media_info,
             }
 
         except Exception as e:
@@ -1401,9 +1610,7 @@ class ByteMuseDiscover(_PluginBase):
             name="ByteMuse",
             mediaid_prefix="metatube_search",
             api_path=f"plugin/ByteMuseDiscover/bytemuse_discover?apikey={settings.API_TOKEN}",
-            filter_params={
-                "discover_type": "new_releases",
-            },
+            filter_params={"discover_type": "new_releases"},
             filter_ui=self.bytemuse_filter_ui(),
             depends={},
         )
@@ -1411,6 +1618,36 @@ class ByteMuseDiscover(_PluginBase):
             event_data.extra_sources = [bytemuse_source]
         else:
             event_data.extra_sources.append(bytemuse_source)
+
+        # JavBus 数据源（如果配置了 javbus_api_base）
+        if self._javbus_api_base:
+            javbus_search = schemas.DiscoverMediaSource(
+                name="JavBus 搜索",
+                mediaid_prefix="javbus_search",
+                api_path=f"plugin/ByteMuseDiscover/javbus_discover?apikey={settings.API_TOKEN}",
+                filter_params={'keyword': ''},
+                filter_ui=[{
+                    "component": "VTextField",
+                    "props": {"model": "keyword", "label": "搜索番号/标题",
+                              "variant": "outlined", "density": "compact", "clearable": True,
+                              "placeholder": "如 SSIS-001"}
+                }],
+            )
+            javbus_ranking = schemas.DiscoverMediaSource(
+                name="JavBus 排行",
+                mediaid_prefix="javbus_ranking",
+                api_path=f"plugin/ByteMuseDiscover/javbus_discover?apikey={settings.API_TOKEN}",
+                filter_params={'rank_type': 'daily'},
+                filter_ui=[{
+                    "component": "VSelect",
+                    "props": {"model": "rank_type", "label": "榜单类型",
+                              "variant": "outlined", "density": "compact",
+                              "items": [{"title":"日榜","value":"daily"},{"title":"周榜","value":"weekly"},
+                                       {"title":"月榜","value":"monthly"},{"title":"年榜","value":"yearly"}]}
+                }],
+            )
+            event_data.extra_sources.extend([javbus_search, javbus_ranking])
+            logger.info("【ByteMuse探索】已注册 JavBus 搜索/排行探索源")
 
     def stop_service(self):
         """

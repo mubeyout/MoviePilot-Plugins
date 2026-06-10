@@ -1,6 +1,7 @@
 # ByteMuse interceptor for non-numeric tmdbid
 import urllib.request
 import urllib.parse
+from urllib.parse import quote as _mquote
 import json
 import ssl
 
@@ -27,7 +28,7 @@ async def tmdb_seasons(tmdbid: int, _: schemas.TokenPayload = Depends(verify_tok
     return []
 
 
-@router.get("/similar/{tmdbid}/{type_name}", summary="类似电影/电视剧", response_model=List[schemas.MediaInfo])
+@router.get("/similar/{tmdbid}/{type_name}", summary="类似电影/电视剧")
 async def tmdb_similar(tmdbid: str,
                        type_name: str,
                        _: schemas.TokenPayload = Depends(verify_token)) -> Any:
@@ -38,6 +39,31 @@ async def tmdb_similar(tmdbid: str,
     try:
         int(tmdbid)
     except (ValueError, TypeError):
+        # mediaverse: javbus code like SSIS-960, search by first actor for similar
+        if '-' in tmdbid:
+            try:
+                import urllib.request as _urllib
+                from urllib.parse import quote as _mquote
+                _url = f'http://10.0.0.1:8922/api/movies/{_mquote(tmdbid, safe="")}'
+                _resp = _urllib.urlopen(_url, timeout=5)
+                _data = json.loads(_resp.read())
+                _stars = (_data or {}).get('stars', []) or []
+                if _stars and isinstance(_stars[0], dict) and _stars[0].get('name'):
+                    _url2 = f'http://10.0.0.1:8922/api/movies/search?keyword={_mquote(_stars[0]["name"], safe="")}&page=1&count=12'
+                    _resp2 = _urllib.urlopen(_url2, timeout=5)
+                    _sim = json.loads(_resp2.read())
+                    _out = []
+                    for _m in (_sim.get('movies', []) or []):
+                        _mid = _m.get('id', '')
+                        if _mid and _mid != tmdbid:
+                            _out.append({'id': _mid, 'tmdb_id': _mid, 'source': 'mediaverse', 'type': '电影',
+                                        'title': _m.get('title', '') or _mid, 'poster_path': (f'/api/v1/plugin/MediaVerse/mediaverse/image?url={_mquote(_m.get("img",""), safe="")}' if _m.get('img') else ''),
+                                        'backdrop_path': '', 'overview': '', 'vote_average': 0,
+                                        'media_id': _mid, 'mediaid_prefix': 'mediaverse_search', 'adult': True})
+                            if len(_out) >= 12: break
+                    return _out
+            except Exception:
+                pass
         return []
 
     mediatype = MediaType(type_name)
@@ -52,7 +78,7 @@ async def tmdb_similar(tmdbid: str,
     return []
 
 
-@router.get("/recommend/{tmdbid}/{type_name}", summary="推荐电影/电视剧", response_model=List[schemas.MediaInfo])
+@router.get("/recommend/{tmdbid}/{type_name}", summary="推荐电影/电视剧")
 async def tmdb_recommend(tmdbid: str,
                          type_name: str,
                          _: schemas.TokenPayload = Depends(verify_token)) -> Any:
@@ -63,6 +89,24 @@ async def tmdb_recommend(tmdbid: str,
     try:
         int(tmdbid)
     except (ValueError, TypeError):
+        # mediaverse: return new releases
+        if '-' in tmdbid:
+            try:
+                import urllib.request as _urllib
+                _resp = _urllib.urlopen('http://10.0.0.1:8922/api/movies?page=1&count=12', timeout=5)
+                _rec = json.loads(_resp.read())
+                _out = []
+                for _m in (_rec.get('movies', []) or []):
+                    _mid = _m.get('id', '')
+                    if _mid and _mid != tmdbid:
+                        _out.append({'id': _mid, 'tmdb_id': _mid, 'source': 'mediaverse', 'type': '电影',
+                                    'title': _m.get('title', '') or _mid, 'poster_path': (f'/api/v1/plugin/MediaVerse/mediaverse/image?url={_mquote(_m.get("img",""), safe="")}' if _m.get('img') else ''),
+                                    'backdrop_path': '', 'overview': '', 'vote_average': 0,
+                                    'media_id': _mid, 'mediaid_prefix': 'mediaverse_search', 'adult': True})
+                        if len(_out) >= 12: break
+                return _out
+            except Exception:
+                pass
         return []
 
     mediatype = MediaType(type_name)

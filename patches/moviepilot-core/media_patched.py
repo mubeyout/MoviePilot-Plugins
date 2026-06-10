@@ -436,6 +436,168 @@ async def detail(mediaid: str, type_name: str, title: Optional[str] = None, year
         except Exception as e:
             import traceback
             logger.error(f"[BYTEMUSE_DETAIL] Failed: {e} - {traceback.format_exc()}")
+    elif mediaid.startswith("javbus_search:") or mediaid.startswith("javbus_ranking:"):
+        code = mediaid.split(":", 1)[1]
+        try:
+            import asyncio, http.client as _hc
+            from urllib.parse import quote as _mquote
+            # Wrap all javbus-api calls in a sync function to avoid async deadlock
+            def _fetch_mv_detail():
+                _conn = _hc.HTTPConnection('10.0.0.1', 8922, timeout=3)
+                _conn.request('GET', f'/api/movies/{_mquote(code, safe="")}')
+                _resp = _conn.getresponse()
+                _data = json.loads(_resp.read())
+                _conn.close()
+                if not _data:
+                    return None
+                # 构建 cast
+                _stars = _data.get('stars', []) or []
+                _cast = []
+                for _s in _stars:
+                    if isinstance(_s, dict) and _s.get('name'):
+                        _cast.append({'id': None, 'name': _s.get('name', ''), 'character': '',
+                                     'profile_path': None, 'gender': None, 'known_for_department': 'Acting',
+                                     'original_name': _s.get('name', ''), 'popularity': None,
+                                     'credit_id': None, 'order': len(_cast)})
+                _directors = []
+                _director = _data.get('director', {})
+                if isinstance(_director, dict) and _director.get('name'):
+                    _directors.append({'id': None, 'name': _director.get('name', ''), 'profile_path': None})
+                # 构建 overview
+                _parts = []
+                for _k, _lbl in [('publisher', '厂牌'), ('producer', '发行'), ('director', '导演'), ('series', '系列')]:
+                    _v = _data.get(_k, {})
+                    if isinstance(_v, dict) and _v.get('name'):
+                        _parts.append(f"{_lbl}: {_v['name']}")
+                if _cast:
+                    _parts.append(f"演员: {', '.join(a['name'] for a in _cast)}")
+                _dur = _data.get('videoLength', 0) or 0
+                if _dur:
+                    _h, _m = divmod(int(_dur), 60)
+                    _parts.append(f"时长: {_h}小时{_m}分钟" if _h else f"时长: {_m}分钟")
+                if _data.get('date'):
+                    _parts.append(f"日期: {_data['date']}")
+                _genres = _data.get('genres', []) or []
+                if _genres:
+                    _gn = [g.get('name', '') if isinstance(g, dict) else str(g) for g in _genres]
+                    _parts.append(f"分类: {', '.join(_gn)}")
+                _overview = '\n'.join(_parts)
+                # stills
+                _stills = []
+                for _s in (_data.get('samples', []) or [])[:10]:
+                    if isinstance(_s, dict):
+                        _src = _s.get('src', '') or _s.get('thumbnail', '')
+                        if _src and _src.startswith('http'):
+                            _stills.append(f'/api/v1/plugin/ByteMuseDiscover/image?url={_mquote(_src, safe="")}')
+                # similar
+                _similar = []
+                if _stars and isinstance(_stars[0], dict) and _stars[0].get('name'):
+                    try:
+                        _c2 = _hc.HTTPConnection('10.0.0.1', 8922, timeout=3)
+                        _c2.request('GET', f'/api/movies/search?keyword={_mquote(_stars[0]["name"], safe="")}&page=1&count=12')
+                        _r2 = _c2.getresponse()
+                        _sim = json.loads(_r2.read())
+                        _c2.close()
+                        for _m in (_sim.get('movies', []) or []):
+                            _mid = _m.get('id', '')
+                            _mimg = _m.get('img', '') or ''
+                            if _mid and _mid != code:
+                                _similar.append({'id': _mid, 'tmdb_id': _mid, 'source': 'themoviedb', 'type': '电影',
+                                                'title': _m.get('title', '') or _mid,
+                                                'poster_path': f'/api/v1/plugin/ByteMuseDiscover/image?url={_mquote(_mimg, safe="")}' if _mimg else '',
+                                                'backdrop_path': '', 'overview': '', 'vote_average': 0,
+                                                'media_id': _mid, 'mediaid_prefix': 'javbus_search', 'adult': True})
+                                if len(_similar) >= 12: break
+                    except Exception:
+                        pass
+                # recommendations
+                _recs = []
+                try:
+                    _c3 = _hc.HTTPConnection('10.0.0.1', 8922, timeout=3)
+                    _c3.request('GET', '/api/movies?page=1&count=12')
+                    _r3 = _c3.getresponse()
+                    _rec = json.loads(_r3.read())
+                    _c3.close()
+                    _sim_ids = set(s['id'] for s in _similar)
+                    for _m in (_rec.get('movies', []) or []):
+                        _mid = _m.get('id', '')
+                        _mimg = _m.get('img', '') or ''
+                        if _mid and _mid != code and _mid not in _sim_ids:
+                            _recs.append({'id': _mid, 'tmdb_id': _mid, 'source': 'themoviedb', 'type': '电影',
+                                         'title': _m.get('title', '') or _mid,
+                                         'poster_path': f'/api/v1/plugin/ByteMuseDiscover/image?url={_mquote(_mimg, safe="")}' if _mimg else '',
+                                         'backdrop_path': '', 'overview': '', 'vote_average': 0,
+                                         'media_id': _mid, 'mediaid_prefix': 'javbus_search', 'adult': True})
+                            if len(_recs) >= 12: break
+                except Exception:
+                    pass
+                return {
+                    '_data': _data, '_cast': _cast, '_directors': _directors,
+                    '_overview': _overview, '_stills': _stills,
+                    '_similar': _similar, '_recs': _recs
+                }
+
+            _mv = await asyncio.to_thread(_fetch_mv_detail)
+            if not _mv:
+                logger.warning(f"[MEDIAVERSE_DETAIL] empty result for {code}")
+            else:
+                _data = _mv['_data']; _cast = _mv['_cast']; _directors = _mv['_directors']
+                _overview = _mv['_overview']; _stills = _mv['_stills']
+                _similar = _mv['_similar']; _recs = _mv['_recs']
+                _id = _data.get('id', '') or code
+                _title = _data.get('title', '') or code
+                _img = _data.get('img', '') or ''
+                _date = _data.get('date', '') or ''
+                _year = _date[:4] if len(_date) >= 4 else '2026'
+                _display_title = f"{_id} {_title}".strip() if _id not in _title else _title
+                _genres = _data.get('genres', []) or []
+                _genre_list = [{'id': idx, 'name': g.get('name', '') if isinstance(g, dict) else str(g)}
+                               for idx, g in enumerate(_genres) if (g.get('name') if isinstance(g, dict) else g)]
+                # backdrop: use first sample src, or poster
+                _bd_src = ''
+                _samples = _data.get('samples', []) or []
+                if _samples and isinstance(_samples[0], dict):
+                    _bd_src = _samples[0].get('src', '') or _samples[0].get('thumbnail', '')
+                if not _bd_src:
+                    _bd_src = _img
+                result = {
+                    'id': _id, 'tmdb_id': _id,
+                    'imdb_id': None, 'tvdb_id': None, 'douban_id': None, 'bangumi_id': None,
+                    'collection_id': None, 'belongs_to_collection': None,
+                    'title': _display_title, 'en_title': '', 'original_title': _id,
+                    'overview': _overview,
+                    'poster_path': f'/api/v1/plugin/ByteMuseDiscover/image?url={_mquote(_img, safe="")}' if _img else '',
+                    'backdrop_path': f'/api/v1/plugin/ByteMuseDiscover/image?url={_mquote(_img, safe="")}' if _img else '',
+                    'vote_average': 0, 'source': 'themoviedb', 'type': '电影', 'adult': True,
+                    'category': '成人/日系', 'original_language': 'ja',
+                    'year': _year, 'release_date': f'{_year}-01-01',
+                    'mediaid_prefix': 'javbus_search', 'media_id': _id,
+                    'detail_link': f'https://www.javbus.com/{_id}' if '-' in _id else '',
+                    'status': 'Released',
+                    'runtime': int(_data.get('videoLength', 0) or 120),
+                    'origin_country': ['JP'],
+                    'spoken_languages': [{'english_name': 'Japanese', 'iso_639_1': 'ja', 'name': 'Japanese'}],
+                    'production_countries': [{'iso_3166_1': 'JP', 'name': 'Japan'}],
+                    'genres': _genre_list or [{'id': 18, 'name': 'Drama'}],
+                    'genre_ids': [g.get('id', 18) for g in _genre_list],
+                    'popularity': 0, 'vote_count': 0, 'tagline': '',
+                    'release_dates': [{'date': f'{_year}-01-01T00:00:00.000Z', 'iso_code': 'JP', 'note': '', 'type': 3}],
+                    'first_air_date': None, 'last_air_date': None,
+                    'networks': [], 'number_of_episodes': None, 'number_of_seasons': None,
+                    'created_by': [], 'episode_run_time': [],
+                    'languages': ['ja'], 'season_info': [], 'seasons': {},
+                    'episode_groups': [], 'episode_group': None, 'next_episode_to_air': {},
+                    'title_year': f'{_display_title} ({_year})',
+                    'actors': _cast, 'directors': _directors,
+                    'stills': _stills, 'recommendations': _recs, 'similar': _similar,
+                    'code': _id,
+                    'actor_name': _cast[0].get('name', '') if _cast else '',
+                }
+                logger.info(f"[MEDIAVERSE_DETAIL] Success: {_display_title}")
+                return result
+        except Exception as e:
+            import traceback
+            logger.error(f"[MEDIAVERSE_DETAIL] Failed: {e} - {traceback.format_exc()}")
     else:
         event_data = MediaRecognizeConvertEventData(
             mediaid=mediaid,
@@ -459,115 +621,6 @@ async def detail(mediaid: str, type_name: str, title: Optional[str] = None, year
     if mediainfo:
         await mediachain.async_obtain_images(mediainfo)
         return mediainfo.to_dict()
-    return schemas.MediaInfo()
-
-
-    """
-    根据媒体ID查询themoviedb或豆瓣媒体信息，type_name: 电影/电视剧
-    """
-    mtype = MediaType(type_name)
-    mediainfo = None
-    mediachain = MediaChain()
-    if mediaid.startswith("tmdb:"):
-        mediainfo = await mediachain.async_recognize_media(tmdbid=int(mediaid[5:]), mtype=mtype)
-    elif mediaid.startswith("douban:"):
-        mediainfo = await mediachain.async_recognize_media(doubanid=mediaid[7:], mtype=mtype)
-    elif mediaid.startswith("bangumi:"):
-        mediainfo = await mediachain.async_recognize_media(bangumiid=int(mediaid[8:]), mtype=mtype)
-    elif mediaid.startswith("metatube_search:") or mediaid.startswith("metatube:") or mediaid.startswith("bytemuse:"):
-        # 成人番号详情：提取番号，直接调 MetatubeSource 插件获取详情
-        code = mediaid.split(":", 1)[1]
-        try:
-            logger.info(f"Metatube detail request for code: {code}")
-            from app.utils.singleton import Singleton
-            for cls in Singleton._instances.values():
-                if hasattr(cls, '_running_plugins'):
-                    # Case-insensitive plugin lookup
-                    plugin = None
-                    for k, v in cls._running_plugins.items():
-                        if 'metatube' in k.lower():
-                            plugin = v
-                            break
-                    if plugin:
-                        client = getattr(plugin, '_metatube_client', None)
-                        if not client:
-                            client = getattr(plugin, 'metatube_client', None)
-                        if client:
-                            results = client.search(code)
-                            logger.info(f"Metatube search for {code}: {len(results) if results else 0} results")
-                            if results:
-                                movie = results[0]
-                                detail = client.get_detail(movie.provider, movie.id)
-                                if detail:
-                                    mediainfo = plugin._convert_metatube_detail_to_mediainfo(detail)
-                                    if mediainfo:
-                                        if mediainfo.douban_id:
-                                            await mediachain.async_obtain_images(mediainfo)
-                                        logger.info(f"Metatube detail success: {mediainfo.title}")
-                                        # 转换为 TMDB-like 格式返回
-                                        result = mediainfo.to_dict()
-                                        # 演员转换为 TMDB cast 格式
-                                        if result.get('actors'):
-                                            cast = []
-                                            for i, actor in enumerate(result['actors']):
-                                                if isinstance(actor, dict):
-                                                    name = actor.get('name', '')
-                                                else:
-                                                    name = str(actor)
-                                                cast.append({
-                                                    'id': None,
-                                                    'name': name,
-                                                    'character': '',
-                                                    'profile_path': None,
-                                                    'gender': None,
-                                                    'known_for_department': 'Acting',
-                                                    'original_name': name,
-                                                    'popularity': None,
-                                                    'credit_id': None,
-                                                    'order': i
-                                                })
-                                            result['actors'] = cast
-                                        # 确保 id 字段存在
-                                        if 'id' not in result or not result.get('id'):
-                                            result['id'] = result.get('media_id') or result.get('tmdb_id')
-                                        # 前端识别 source=themoviedb，否则显示"未识别到媒体信息"
-                                        result['source'] = 'themoviedb'
-                                        logger.info(f"DEBUG: set source=themoviedb, id={result.get('id')}")
-                                        return result
-                        logger.warning(f"Metatube plugin found but no client")
-                        break
-            logger.warning(f"MetatubeSource plugin not found in running plugins")
-        except Exception as e:
-            import traceback
-            logger.error(f"Metatube detail failed: {e}\n{traceback.format_exc()}")
-    else:
-        # 广播事件解析媒体信息
-        event_data = MediaRecognizeConvertEventData(
-            mediaid=mediaid,
-            convert_type=settings.RECOGNIZE_SOURCE
-        )
-        event = await eventmanager.async_send_event(ChainEventType.MediaRecognizeConvert, event_data)
-        # 使用事件返回的上下文数据
-        if event and event.event_data and event.event_data.media_dict:
-            event_data: MediaRecognizeConvertEventData = event.event_data
-            new_id = event_data.media_dict.get("id")
-            if event_data.convert_type == "themoviedb":
-                mediainfo = await mediachain.async_recognize_media(tmdbid=new_id, mtype=mtype)
-            elif event_data.convert_type == "douban":
-                mediainfo = await mediachain.async_recognize_media(doubanid=new_id, mtype=mtype)
-        elif title:
-            # 使用名称识别兜底
-            meta = MetaInfo(title)
-            if year:
-                meta.year = year
-            if mtype:
-                meta.type = mtype
-            mediainfo = await mediachain.async_recognize_media(meta=meta)
-    # 识别
-    if mediainfo:
-        await mediachain.async_obtain_images(mediainfo)
-        return mediainfo.to_dict()
-
     return schemas.MediaInfo()
 
 

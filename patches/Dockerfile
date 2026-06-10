@@ -1,20 +1,5 @@
-FROM jxxghp/moviepilot:2.10.2
+FROM jxxghp/moviepilot:latest
 
-# ============ 构建阶段 ============
-
-# FastAPI 兼容性降级（移出运行时，加速启动）
-RUN /opt/venv/bin/pip install -q --no-cache-dir 'fastapi==0.115.6' 'starlette==0.41.0'
-
-# qbittorrent-api 升级（兼容 qBittorrent v5.2.0）
-RUN /opt/venv/bin/pip install -q --no-cache-dir 'qbittorrent-api>=2026.5.1'
-
-# 插件预装依赖（避免 uv cache 在不支持 symlink 的卷上失败）
-# mubeyclashrp: simpleeval 缺失导致 uv symlink 操作被拒 (os error 1)
-RUN /opt/venv/bin/pip install -q --no-cache-dir \
-    'simpleeval~=1.0.3' \
-    'jsonpatch~=1.33' \
-    'PyYAML~=6.0.2' \
-    'websockets>=12.0'
 
 # ============ 后端 Python 补丁 ============
 

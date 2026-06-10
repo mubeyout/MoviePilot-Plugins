@@ -83,5 +83,13 @@
         "history": {
             "v2.0.0": "初始版本，支持视频、音频、其他文件分类处理，生成.strm或下载到本地"
         }
+    },
+    "jackettextend": {
+        "version": "1.0.0",
+        "description": "Jackett Extend"
+    },
+    "javbusextend": {
+        "version": "1.0.0",
+        "description": "JavBus Extend"
     }
 }
