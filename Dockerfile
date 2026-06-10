@@ -5,6 +5,17 @@ FROM jxxghp/moviepilot:2.10.2
 # FastAPI 兼容性降级（移出运行时，加速启动）
 RUN /opt/venv/bin/pip install -q --no-cache-dir 'fastapi==0.115.6' 'starlette==0.41.0'
 
+# qbittorrent-api 升级（兼容 qBittorrent v5.2.0）
+RUN /opt/venv/bin/pip install -q --no-cache-dir 'qbittorrent-api>=2026.5.1'
+
+# 插件预装依赖（避免 uv cache 在不支持 symlink 的卷上失败）
+# mubeyclashrp: simpleeval 缺失导致 uv symlink 操作被拒 (os error 1)
+RUN /opt/venv/bin/pip install -q --no-cache-dir \
+    'simpleeval~=1.0.3' \
+    'jsonpatch~=1.33' \
+    'PyYAML~=6.0.2' \
+    'websockets>=12.0'
+
 # ============ 后端 Python 补丁 ============
 
 # ByteMuse 媒体详情 API（stills, recommendations, similar）
@@ -23,14 +34,19 @@ COPY patches/moviepilot-core/indexer_init.py /app/app/modules/indexer/__init__.p
 COPY patches/moviepilot-core/spider_init.py /app/app/modules/indexer/spider/__init__.py
 COPY patches/moviepilot-core/mtorrent.py /app/app/modules/indexer/spider/mtorrent.py
 
+# MediaVerse 插件：移除过时的 self.register_route() 调用
+COPY patches/moviepilot-core/mediaverse-fix/__init__.py /app/app/plugins/mediaverse/__init__.py
+
 # 清除 pyc 缓存
 RUN find /app/app -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # ============ 前端 + 运行时补丁 ============
 
-# 剧照注入脚本 + 注入工具
+# 剧照注入脚本 + MediaVerse 探索页 + 注入工具
 COPY patches/moviepilot-core/stills-inject.js /config/stills-inject.js
+COPY patches/moviepilot-core/mediaverse-explore.js /config/mediaverse-explore.js
 COPY patches/moviepilot-core/inject_stills.py /config/inject_stills.py
+COPY patches/moviepilot-core/setup_mediaverse.py /config/setup_mediaverse.py
 
 # nginx 缓存策略
 COPY patches/moviepilot-core/nginx_common_patched.conf /config/nginx_common_patched.conf
