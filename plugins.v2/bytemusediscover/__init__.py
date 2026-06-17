@@ -128,18 +128,32 @@ class ByteMuseDiscover(_PluginBase):
 
     @staticmethod
     def _proxy_image_url(url: str) -> str:
-        """
-        将图片 URL 转换为 MoviePilot 图片代理路径
-        解决 DMM 等外部图片源防盗链问题
-        """
         if not url:
             return ""
         if not url.startswith("http"):
             return url
         from urllib.parse import quote
-        # 使用 /api/v1/cache/image 代理（无域名白名单限制）
-        # 但需要服务端支持 DMM Referer，所以通过插件自身 API 代理
         return f"/api/v1/plugin/ByteMuseDiscover/image?url={quote(url, safe='')}"
+
+    @staticmethod
+    def _dmm_poster(code: str) -> str:
+        """从番号构造 DMM poster URL"""
+        if not code or '-' not in code:
+            return ""
+        parts = code.split('-', 1)
+        prefix = parts[0].lower()
+        num = parts[1].lower()
+        if num.isdigit():
+            num = num.zfill(5)
+        from urllib.parse import quote
+        return f"/api/v1/plugin/ByteMuseDiscover/image?url={quote('https://pics.dmm.co.jp/digital/video/' + prefix + num + '/' + prefix + num + 'ps.jpg', safe='')}"
+
+    @staticmethod
+    def _poster_or_dmm(img_url: str, code: str) -> str:
+        """javbus.com 图片 403，回退到 DMM poster"""
+        if img_url and "javbus.com" not in img_url:
+            return ByteMuseDiscoverPlugin._proxy_image_url(img_url)
+        return ByteMuseDiscoverPlugin._dmm_poster(code)
 
     def init_plugin(self, config: dict = None):
         if config:
@@ -209,6 +223,13 @@ class ByteMuseDiscover(_PluginBase):
                 "methods": ["GET"],
                 "summary": "ByteMuse演员阵容",
                 "description": "获取演员阵容（List[MediaPerson]格式）",
+            },
+            {
+                "path": "/bytemuse_similar/{mediaid}",
+                "endpoint": self.bytemuse_similar,
+                "methods": ["GET"],
+                "summary": "ByteMuse类似作品",
+                "description": "获取同演员作品（List[MediaInfo]格式）",
             },
             {
                 "path": "/bytemuse_recommend/{mediaid}",
@@ -695,36 +716,40 @@ class ByteMuseDiscover(_PluginBase):
             if d.get('tags'): _parts.append(f"分类: {', '.join(d['tags'][:10])}")
             description = '\n'.join(_parts)
 
+            # similar = 同系列作品
             similar = []
-            main_star = actors_list[0].get('name', '') if actors_list else ''
-            if main_star:
-                sim_data = self._javbus_get(f"/api/movies/search?keyword={_mquote(main_star)}&page=1&count=12")
+            series_name = d.get('series') if isinstance(d.get('series'), str) else (d.get('series', {}) or {}).get('name', '')
+            if series_name:
+                sim_data = self._javbus_get(f"/api/movies/search?keyword={_mquote(series_name)}&page=1&count=12")
                 for m in (sim_data.get('movies', []) or []):
                     mid = m.get('id', '')
                     if mid and mid.upper() != code.upper():
                         similar.append({
                             'media_id': mid, 'id': mid,
                             'title': (m.get('title', '') or mid),
-                            'poster_path': self._proxy_image_url(m.get('img', '') or ''),
+                            'poster_path': self._poster_or_dmm(m.get('img', ''), mid),
                         })
                         if len(similar) >= 12:
                             break
 
-            monthly = []
+            # recommendations = 同演员作品
+            recommendations = []
             sim_ids = set(s['media_id'].upper() for s in similar)
-            new_data = self._javbus_get('/api/movies?page=1&count=12')
-            for m in (new_data.get('movies', []) or []):
-                mid = m.get('id', '')
-                if mid and mid.upper() != code.upper() and mid.upper() not in sim_ids:
-                    monthly.append({
-                        'media_id': mid, 'id': mid,
-                        'title': (m.get('title', '') or mid),
-                        'poster_path': self._proxy_image_url(m.get('img', '') or ''),
-                    })
-                    if len(monthly) >= 12:
-                        break
+            main_star = actors_list[0].get('name', '') if actors_list else ''
+            if main_star:
+                rec_data = self._javbus_get(f"/api/movies/search?keyword={_mquote(main_star)}&page=1&count=12")
+                for m in (rec_data.get('movies', []) or []):
+                    mid = m.get('id', '')
+                    if mid and mid.upper() != code.upper() and mid.upper() not in sim_ids:
+                        recommendations.append({
+                            'media_id': mid, 'id': mid,
+                            'title': (m.get('title', '') or mid),
+                            'poster_path': self._poster_or_dmm(m.get('img', ''), mid),
+                        })
+                        if len(recommendations) >= 12:
+                            break
 
-            return {'code': code, 'stills': stills, 'similar': similar, 'monthly': monthly,
+            return {'code': code, 'stills': stills, 'similar': similar, 'recommendations': recommendations,
                     'description': description, 'actors': actors_list}
         except Exception as e:
             logger.error(f"[JAVBUS] _javbus_detail_public 失败: {e}")
@@ -733,16 +758,45 @@ class ByteMuseDiscover(_PluginBase):
     @cached(region="javbus_discover", ttl=1800, skip_none=True)
     def javbus_discover(self, mode: str = "search", keyword: str = "", rank_type: str = "daily",
                        page: int = 1, count: int = 30) -> List[schemas.MediaInfo]:
-        """JavBus 搜索和排行榜"""
+        """JavBus 搜索和排行榜
+        rank_type: daily=今日发行, weekly=近7天, monthly=近30天, yearly=近365天
+        """
         if not self._javbus_api_base:
             return []
         from urllib.parse import quote
         try:
             if mode == "search" and keyword:
                 data = self._javbus_get(f"/api/movies/search?keyword={quote(keyword)}&page={page}&count={count}")
+                movies = data.get('movies', []) or []
             else:
-                data = self._javbus_get(f"/api/movies?page={page}&count={count}")
-            movies = data.get('movies', []) or []
+                # 排行榜模式：拉取更多数据后按 date 过滤
+                import datetime as _dt
+                now = _dt.date.today()
+                rank_days = {
+                    "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365
+                }.get(rank_type, 1)
+                cutoff = now - _dt.timedelta(days=rank_days)
+                # 拉取多页以获取足够的时间范围内数据
+                all_movies = []
+                for pg in range(1, 11):  # 最多拉 10 页
+                    d = self._javbus_get(f"/api/movies?page={pg}&count=100")
+                    all_movies.extend(d.get('movies', []) or [])
+                    if not d.get('movies'):
+                        break
+                # 按 date 过滤
+                movies = []
+                for m in all_movies:
+                    mdate_str = m.get('date', '') or ''
+                    if mdate_str:
+                        try:
+                            mdate = _dt.datetime.strptime(mdate_str, "%Y-%m-%d").date()
+                            if mdate >= cutoff:
+                                movies.append(m)
+                        except (ValueError, TypeError):
+                            pass
+                # 分页
+                start = (page - 1) * count
+                movies = movies[start:start + count]
             results = []
             for m in movies:
                 mid = m.get('id', '')
@@ -761,7 +815,7 @@ class ByteMuseDiscover(_PluginBase):
                 if hasattr(mi, 'original_title'): mi.original_title = mid
                 if hasattr(mi, 'adult'): mi.adult = True
                 results.append(mi)
-            logger.info(f"[JAVBUS] javbus_discover 返回 {len(results)} 条数据 (mode={mode})")
+            logger.info(f"[JAVBUS] javbus_discover 返回 {len(results)} 条 (mode={mode}, rank_type={rank_type})")
             return results
         except Exception as e:
             logger.error(f"[JAVBUS] javbus_discover 失败: {e}")
@@ -1147,13 +1201,91 @@ class ByteMuseDiscover(_PluginBase):
         logger.info(f"bytemuse_recommend: 返回 {len(result)} 个推荐作品")
         return result
 
+    def bytemuse_similar(self, mediaid: str) -> List[Dict[str, Any]]:
+        """
+        获取同演员作品（List[MediaInfo] 格式，供前端 MediaCardSlideView 使用）
+        从 ByteMuse 按主演员搜索，排除当前番号和推荐列表中的作品
+
+        :param mediaid: 媒体ID
+        :return: List[MediaInfo] 格式的同演员作品列表
+        """
+        logger.info(f"bytemuse_similar 被调用: mediaid={mediaid}")
+
+        code = mediaid.replace("bytemuse:", "", 1) if mediaid.startswith("bytemuse:") else mediaid
+        code = code.replace("metatube_search:", "", 1) if code.startswith("metatube_search:") else code
+        if not code:
+            return []
+
+        current_code = code.upper()
+
+        # 获取当前作品主演员
+        main_actor = ""
+        try:
+            detail = self._api_client.search_by_code(query=code)
+            if detail:
+                actors_data = detail.get("actors", [])
+                if actors_data and isinstance(actors_data[0], dict):
+                    main_actor = actors_data[0].get("name", "")
+        except Exception as e:
+            logger.debug(f"bytemuse_similar: 获取演员失败: {e}")
+
+        if not main_actor:
+            return []
+
+        # 按主演员搜索
+        result = []
+        try:
+            actor_result = self._api_client.search_by_code(query=main_actor)
+            if actor_result:
+                for c in (actor_result.get("codes") or [])[:12]:
+                    c_code = (c.get("code", "") or "").upper()
+                    if c_code and c_code != current_code:
+                        media = self._movie_to_media_dict(c)
+                        if media:
+                            result.append(media.model_dump())
+                    if len(result) >= 12:
+                        break
+        except Exception as e:
+            logger.debug(f"bytemuse_similar: bytemuse search failed: {e}")
+
+        # 回退：javbus-api 搜索
+        if not result and self._javbus_api_base and main_actor:
+            try:
+                from urllib.parse import quote as _jq
+                sim_data = self._javbus_get(
+                    f"/api/movies/search?keyword={_jq(main_actor)}&page=1&count=12"
+                )
+                for m in (sim_data.get('movies', []) or []):
+                    mid = (m.get('id', '') or '')
+                    if mid and mid.upper() != current_code:
+                        mimg = m.get('img', '') or ''
+                        mtitle = (m.get('title', '') or mid)
+                        mdate = (m.get('date', '') or '')[:4] or '2026'
+                        mi = schemas.MediaInfo(
+                            type="电影",
+                            title=f"{mid} {mtitle}".strip() if mid not in mtitle else mtitle,
+                            mediaid_prefix="javbus_search",
+                            media_id=mid,
+                            poster_path=self._proxy_image_url(mimg) if mimg else '',
+                            year=mdate,
+                        )
+                        if hasattr(mi, 'source'): mi.source = 'themoviedb'
+                        if hasattr(mi, 'original_title'): mi.original_title = mid
+                        result.append(mi.model_dump())
+                    if len(result) >= 12:
+                        break
+                logger.info(f"bytemuse_similar: 回退 javbus-api, {len(result)} 条")
+            except Exception as e:
+                logger.debug(f"bytemuse_similar: javbus fallback failed: {e}")
+
+        logger.info(f"bytemuse_similar: 返回 {len(result)} 个同演员作品")
+        return result
+
     def bytemuse_detail_public(self, mediaid: str) -> Dict[str, Any]:
         """
-        匿名端点：获取媒体详情数据（剧照 + 同演员作品 + 今日上新）
-        供前端 stills-inject.js 直接调用，无需认证
-        支持 javbus_search:/javbus_ranking: 前缀
+        匿名端点：获取媒体详情数据（剧照 + 推荐 + 类似）
+        供前端注入使用；ByteMuse 走稳定老逻辑，JavBus 走独立分支
         """
-        # 解析前缀
         code = mediaid
         is_javbus = False
         for prefix in ("javbus_search:", "javbus_ranking:", "bytemuse:", "metatube_search:"):
@@ -1165,16 +1297,16 @@ class ByteMuseDiscover(_PluginBase):
         if not code:
             return {"stills": [], "similar": [], "recommendations": [], "monthly": []}
 
-        # JavBus 数据源
         if is_javbus and self._javbus_api_base:
-            return self._javbus_detail_public(code)
+            data = self._javbus_detail_public(code)
+            if 'monthly' in data and 'recommendations' not in data:
+                data['recommendations'] = data.pop('monthly')
+            return data
 
-        # ByteMuse 数据源（原有逻辑）
         if not self._api_client:
             return {"stills": [], "similar": [], "recommendations": [], "monthly": []}
 
         try:
-            # 1. 获取当前番号详情（剧照 + 演员列表）
             result = self._api_client.search_by_code(query=code)
             if not result:
                 return {"stills": [], "similar": [], "recommendations": []}
@@ -1185,8 +1317,8 @@ class ByteMuseDiscover(_PluginBase):
                 return {"stills": [], "similar": [], "recommendations": []}
 
             movie_data = codes[0]
+            current_code_upper = code.upper()
 
-            # 2. 剧照
             stills = []
             still_photo_str = movie_data.get("still_photo") or ""
             if still_photo_str:
@@ -1196,76 +1328,6 @@ class ByteMuseDiscover(_PluginBase):
                     if s and s.startswith("http"):
                         stills.append(f"/api/v1/plugin/ByteMuseDiscover/image?url={quote(s, safe='')}")
 
-            # 3. 同演员作品（similar）
-            similar = []
-            main_actor = ""
-            if actors_data and isinstance(actors_data[0], dict):
-                main_actor = actors_data[0].get("name", "")
-
-            if main_actor:
-                try:
-                    actor_result = self._api_client.search_by_code(query=main_actor)
-                    if actor_result:
-                        actor_codes = actor_result.get("codes", [])
-                        current_code = code.upper()
-                        for c in actor_codes[:12]:
-                            c_code = (c.get("code", "") or "")
-                            if c_code and c_code.upper() != current_code:
-                                c_poster = c.get("poster") or c.get("banner") or ""
-                                c_title = (c.get("cn_title") or c.get("title") or c_code)
-                                similar.append({
-                                    "media_id": c_code,
-                                    "title": c_title,
-                                    "poster_path": c_poster,
-                                })
-                except Exception as e:
-                    logger.debug(f"bytemuse_detail_public: similar fetch failed: {e}")
-
-            # 4. 今日上新（用于"类似"栏）- 用 http.client 登录+请求
-            monthly = []
-            try:
-                current_code_upper = code.upper()
-                similar_codes = set(s['media_id'].upper() for s in similar)
-                import http.client as _hc
-                import urllib.parse as _up
-                # Login
-                _params = _up.urlencode({'username': self._bytemuse_username, 'password': self._bytemuse_password, 'token_key': ''})
-                _conn = _hc.HTTPConnection('10.0.0.1', 3750, timeout=5)
-                _conn.request('GET', '/api/v1/login?' + _params)
-                _login_data = json.loads(_conn.getresponse().read())
-                _jwt = (_login_data.get('data') or {}).get('token', '')
-                _conn.close()
-                if _jwt:
-                    _conn2 = _hc.HTTPConnection('10.0.0.1', 3750, timeout=5)
-                    _body = json.dumps({'page': 1, 'page_size': 15}).encode()
-                    _conn2.request('POST', '/api/v1/codes/release_today', body=_body, headers={
-                        'Authorization': 'Bearer ' + _jwt,
-                        'Content-Type': 'application/json'
-                    })
-                    _new_resp = _conn2.getresponse()
-                    _new_data = json.loads(_new_resp.read())
-                    _conn2.close()
-                    new_items = _new_data if isinstance(_new_data, list) else (_new_data.get('data') or [])
-                    for item in new_items:
-                        if not isinstance(item, dict):
-                            continue
-                        item_code = (item.get('code', '') or '').upper()
-                        if not item_code or item_code == current_code_upper or item_code in similar_codes:
-                            continue
-                        item_poster = item.get('poster') or item.get('banner') or ''
-                        item_title = (item.get('cn_title') or item.get('title') or item_code)
-                        monthly.append({
-                            'media_id': item_code,
-                            'title': item_title,
-                            'poster_path': item_poster,
-                        })
-                        if len(monthly) >= 12:
-                            break
-            except Exception as e:
-                logger.debug(f"bytemuse_detail_public: new releases fetch failed: {e}")
-
-            # 5. 简介 + 演员列表
-            description = movie_data.get("description") or ""
             actors_list = []
             for actor in (actors_data or []):
                 if isinstance(actor, dict):
@@ -1274,7 +1336,56 @@ class ByteMuseDiscover(_PluginBase):
                         "photo": actor.get("photo", ""),
                     })
 
-            # 6. 完整 MediaInfo（用于前端自主渲染详情页）
+            recommendations = []
+            main_actor = actors_list[0].get('name', '') if actors_list else ''
+            if main_actor:
+                try:
+                    actor_result = self._api_client.search_by_code(query=main_actor)
+                    if actor_result:
+                        for c in (actor_result.get("codes") or [])[:24]:
+                            c_code = (c.get("code", "") or "")
+                            if c_code and c_code.upper() != current_code_upper:
+                                c_poster = c.get("poster") or c.get("banner") or ""
+                                c_title = (c.get("cn_title") or c.get("title") or c_code)
+                                recommendations.append({
+                                    "media_id": c_code,
+                                    "id": c_code,
+                                    "title": c_title,
+                                    "poster_path": self._proxy_image_url(c_poster) if c_poster else "",
+                                })
+                                if len(recommendations) >= 12:
+                                    break
+                except Exception as e:
+                    logger.debug(f"bytemuse_detail_public: recommendations fetch failed: {e}")
+
+            similar = []
+            used = set((item.get('media_id') or '').upper() for item in recommendations)
+            try:
+                series_name = (movie_data.get("series") or "").strip()
+                if series_name:
+                    series_result = self._api_client.search_by_code(query=series_name)
+                    if series_result:
+                        for c in (series_result.get("codes") or [])[:24]:
+                            c_code = (c.get("code", "") or "")
+                            if c_code and c_code.upper() != current_code_upper and c_code.upper() not in used:
+                                c_poster = c.get("poster") or c.get("banner") or ""
+                                c_title = (c.get("cn_title") or c.get("title") or c_code)
+                                similar.append({
+                                    "media_id": c_code,
+                                    "id": c_code,
+                                    "title": c_title,
+                                    "poster_path": self._proxy_image_url(c_poster) if c_poster else "",
+                                })
+                                if len(similar) >= 12:
+                                    break
+            except Exception as e:
+                logger.debug(f"bytemuse_detail_public: similar fetch failed: {e}")
+
+            if not similar:
+                for item in recommendations[:12]:
+                    similar.append(dict(item))
+
+            description = movie_data.get("description") or ""
             mediainfo = self._fetch_bytemuse_detail(code)
             media_info = None
             if mediainfo:
@@ -1284,91 +1395,110 @@ class ByteMuseDiscover(_PluginBase):
                 "code": code,
                 "stills": stills,
                 "similar": similar,
-                "monthly": monthly,
+                "recommendations": recommendations,
                 "description": description,
                 "actors": actors_list,
                 "media_info": media_info,
             }
-
         except Exception as e:
             logger.error(f"bytemuse_detail_public failed: {e}")
             return {"stills": [], "similar": [], "recommendations": []}
 
-    def recognize_media(self, meta=None, mtype=None, **kwargs):
+    def _extract_code_from_mediaid(self, mediaid: str, imdb_id: str = "") -> Tuple[str, str]:
+        """从 mediaid/imdb_id 提取纯番号和数据源类型
+        返回 (code, source)，source 为 'bytemuse' 或 'javbus'
         """
-        识别媒体信息（用于点击探索项时显示详情）
-        meta 可能为 None（从探索列表点击时），通过 mediaid 获取详情
-        """
+        raw = mediaid or imdb_id or ""
+        if not raw:
+            return "", ""
+        # 处理带前缀的 mediaid
+        for prefix in ("javbus_search:", "javbus_ranking:", "bytemuse:", "metatube_search:", "bytemuse:", "metatube:"):
+            if raw.startswith(prefix):
+                code = raw.replace(prefix, "", 1)
+                source = "javbus" if prefix.startswith("javbus") else "bytemuse"
+                return code, source
+        # 无前缀，尝试识别格式
+        return raw, "bytemuse"
 
-        # 获取 mediaid
+    def recognize_media(self, meta=None, mtype=None, **kwargs):
+        """识别媒体信息（用于点击探索项时显示详情）"""
         mediaid = kwargs.get("mediaid", "")
         imdb_id = kwargs.get("imdb_id", "")
-
-        logger.debug(f"recognize_media 被调用: mediaid={mediaid}, imdb_id={imdb_id}")
-
-        # 提取番号（优先使用 mediaid，其次 imdb_id）
-        # 注意：现在 imdb_id 已经是纯番号，不带 "bytemuse:" 前缀
-        code = None
-        if mediaid:
-            if mediaid.startswith("bytemuse:"):
-                code = mediaid.replace("bytemuse:", "", 1)
-            else:
-                code = mediaid
-        elif imdb_id:
-            # 直接使用 imdb_id（已经是纯番号）
-            code = imdb_id
-
+        code, source = self._extract_code_from_mediaid(mediaid, imdb_id)
         if not code:
             return None
-
-        logger.info(f"recognize_media: 识别 ByteMuse 番号: {code}")
-
-        # 调用详情获取
+        logger.info(f"recognize_media: code={code}, source={source}")
+        if source == "javbus" and self._javbus_api_base:
+            return self._fetch_javbus_detail(code)
         return self._fetch_bytemuse_detail(code)
 
     async def async_recognize_media(self, meta=None, mtype=None, **kwargs):
-        """
-        异步识别媒体信息（用于点击探索项时显示详情）
-        meta 可能为 None（从探索列表点击时），通过 mediaid 获取详情
-        """
-
-        # 获取 mediaid
+        """异步识别媒体信息（用于点击探索项时显示详情）"""
         mediaid = kwargs.get("mediaid", "")
         imdb_id = kwargs.get("imdb_id", "")
-
-        logger.debug(f"async_recognize_media 被调用: mediaid={mediaid}, imdb_id={imdb_id}")
-
-        # 检查是否是 ByteMuse 的数据（通过 mediaid_prefix 或 imdb_id）
-        # 注意：imdb_id 现在是纯番号（如 SSIS-123），没有前缀
-        # 我们通过其他方式判断，比如检查番号格式
-
-        # 提取番号（优先使用 mediaid）
-        code = None
-        if mediaid:
-            # mediaid 可能是 "bytemuse:SSIS-123" 或 "SSIS-123"
-            if mediaid.startswith("bytemuse:"):
-                code = mediaid.replace("bytemuse:", "", 1)
-            else:
-                code = mediaid
-        elif imdb_id:
-            # 直接使用 imdb_id（已经是纯番号）
-            code = imdb_id
-
+        code, source = self._extract_code_from_mediaid(mediaid, imdb_id)
         if not code:
             return None
-
-        logger.info(f"async_recognize_media: 识别 ByteMuse 番号: {code}")
-
-        # 异步调用详情获取
+        logger.info(f"async_recognize_media: code={code}, source={source}")
         import asyncio
         from concurrent.futures import ThreadPoolExecutor
         try:
             loop = asyncio.get_event_loop()
+            fetcher = (self._fetch_javbus_detail if source == "javbus" and self._javbus_api_base else self._fetch_bytemuse_detail)
             with ThreadPoolExecutor(max_workers=1) as pool:
-                result = await loop.run_in_executor(pool, self._fetch_bytemuse_detail, code)
+                result = await loop.run_in_executor(pool, fetcher, code)
                 return result
         except Exception as err:
             logger.error(f"async_recognize_media 获取详情失败: {str(err)}")
+            return None
+
+    def _fetch_javbus_detail(self, code: str) -> schemas.MediaInfo:
+        """从 javbus-api 获取详情，返回完整 MediaInfo"""
+        if not code or not self._javbus_api_base:
+            return None
+        from urllib.parse import quote as _mquote
+        try:
+            d = self._javbus_get(f"/api/movies/{_mquote(code)}", timeout=15)
+            if not d:
+                return None
+            mid = d.get('id', '') or code
+            mtitle = d.get('title', '') or mid
+            mimg = d.get('img', '') or ''
+            mdate = (d.get('date', '') or '')[:4] or '2026'
+            stars = d.get('stars', []) or []
+            tags = d.get('tags', []) or []
+            _parts = []
+            if d.get('date'): _parts.append(f"发行日期: {d['date']}")
+            if d.get('director'): _parts.append(f"导演: {d['director']}")
+            if d.get('videoLength'): _parts.append(f"时长: {d['videoLength']}分钟")
+            if tags: _parts.append(f"分类: {', '.join(tags[:10])}")
+            overview = '\n'.join(_parts) or f"番号: {mid}"
+            mi = schemas.MediaInfo(
+                type="电影",
+                title=f"{mid} {mtitle}".strip() if mid not in mtitle else mtitle,
+                mediaid_prefix="javbus_search",
+                media_id=mid,
+                imdb_id=mid,
+                poster_path=self._proxy_image_url(mimg) if mimg else '',
+                year=mdate,
+                overview=overview,
+            )
+            if hasattr(mi, 'source'): mi.source = 'themoviedb'
+            if hasattr(mi, 'original_title'): mi.original_title = mid
+            if hasattr(mi, 'adult'): mi.adult = True
+            if d.get('director'):
+                try: mi.directors = [{"name": d['director']}]
+                except: pass
+            if stars:
+                try:
+                    mi.actors = [{"name": s.get('name','') if isinstance(s,dict) else str(s)} for s in stars[:10] if s]
+                except: pass
+            if tags:
+                try: mi.genres = [{"name": t} for t in tags[:10]]
+                except: pass
+            return mi
+        except Exception as e:
+            logger.error(f"_fetch_javbus_detail 失败: {e}")
             return None
 
     def _fetch_bytemuse_detail(self, code: str):
@@ -1624,33 +1754,39 @@ class ByteMuseDiscover(_PluginBase):
 
         # JavBus 数据源（如果配置了 javbus_api_base）
         if self._javbus_api_base:
-            javbus_search = schemas.DiscoverMediaSource(
-                name="JavBus 搜索",
+            javbus_source = schemas.DiscoverMediaSource(
+                name="JavBus",
                 mediaid_prefix="javbus_search",
                 api_path=f"plugin/ByteMuseDiscover/javbus_discover?apikey={settings.API_TOKEN}",
-                filter_params={'keyword': ''},
-                filter_ui=[{
-                    "component": "VTextField",
-                    "props": {"model": "keyword", "label": "搜索番号/标题",
-                              "variant": "outlined", "density": "compact", "clearable": True,
-                              "placeholder": "如 SSIS-001"}
-                }],
+                filter_params={'mode': 'ranking'},
+                filter_ui=[
+                    {
+                        "component": "div",
+                        "props": {"class": "flex justify-start items-center gap-4"},
+                        "content": [
+                            {
+                                "component": "VSelect",
+                                "props": {"model": "mode", "label": "模式", "variant": "outlined", "density": "compact",
+                                          "items": [{"title":"排行榜","value":"ranking"},{"title":"搜索","value":"search"}]},
+                            },
+                            {
+                                "component": "VSelect",
+                                "props": {"model": "rank_type", "label": "榜单", "variant": "outlined", "density": "compact",
+                                          "items": [{"title":"日榜","value":"daily"},{"title":"周榜","value":"weekly"},
+                                                   {"title":"月榜","value":"monthly"},{"title":"年榜","value":"yearly"}]},
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VTextField",
+                        "props": {"model": "keyword", "label": "搜索番号/标题",
+                                  "variant": "outlined", "density": "compact", "clearable": True,
+                                  "placeholder": "切换到搜索模式后输入，如 SSIS-001"},
+                    },
+                ],
             )
-            javbus_ranking = schemas.DiscoverMediaSource(
-                name="JavBus 排行",
-                mediaid_prefix="javbus_ranking",
-                api_path=f"plugin/ByteMuseDiscover/javbus_discover?apikey={settings.API_TOKEN}",
-                filter_params={'rank_type': 'daily'},
-                filter_ui=[{
-                    "component": "VSelect",
-                    "props": {"model": "rank_type", "label": "榜单类型",
-                              "variant": "outlined", "density": "compact",
-                              "items": [{"title":"日榜","value":"daily"},{"title":"周榜","value":"weekly"},
-                                       {"title":"月榜","value":"monthly"},{"title":"年榜","value":"yearly"}]}
-                }],
-            )
-            event_data.extra_sources.extend([javbus_search, javbus_ranking])
-            logger.info("【ByteMuse探索】已注册 JavBus 搜索/排行探索源")
+            event_data.extra_sources.append(javbus_source)
+            logger.info("【ByteMuse探索】已注册 JavBus 探索源")
 
     def stop_service(self):
         """

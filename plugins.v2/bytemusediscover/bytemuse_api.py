@@ -5,6 +5,7 @@ ByteMuse API 客户端
 from typing import Optional, List, Dict, Any
 import threading
 import time
+import datetime
 
 from app.log import logger
 from app.utils.http import RequestUtils
@@ -290,53 +291,78 @@ class ByteMuseApiClient:
             return None
 
     def _get_ranks(self, rank_type: str = "daily", limit: int = 50) -> Optional[List[Dict[str, Any]]]:
-        """获取榜单"""
+        """获取榜单（基于 release_today 多页数据 + 时间范围过滤）"""
         try:
-            type_param = self.DISCOVER_TYPES.get(f"rankings_{rank_type}", rank_type)
-            url = self._build_url("/api/v1/ranks")
-            params = {"type": type_param, "limit": limit}
+            # ByteMuse /api/v1/ranks 返回空数据，改用 release_today 模拟榜单
+            rank_days = {
+                "daily": 1,
+                "weekly": 7,
+                "monthly": 30,
+                "javlibrary": 30,
+            }.get(rank_type, 1)
+            cutoff = datetime.date.today() - datetime.timedelta(days=rank_days)
 
-            response = RequestUtils(
-                timeout=self._timeout,
-                headers=self._get_headers()
-            ).get_res(url, params=params)
+            # 拉取多页数据以覆盖时间范围
+            all_items = []
+            for page in range(1, 11):
+                page_data = self._get_release_today(page, 100)
+                if not page_data:
+                    break
+                all_items.extend(page_data)
+                if len(page_data) < 100:
+                    break
 
-            if response is None or response.status_code != 200:
-                return None
+            # 按 release_date 过滤
+            filtered = []
+            for item in all_items:
+                date_str = item.get("release_date", "") or ""
+                if date_str:
+                    try:
+                        item_date = datetime.datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+                        if item_date >= cutoff:
+                            filtered.append(item)
+                    except (ValueError, TypeError):
+                        pass
 
-            data = response.json()
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "data" in data:
-                return data["data"]
-            return None
+            logger.info(f"ByteMuse {rank_type}榜: 拉取 {len(all_items)} 条，过滤后 {len(filtered)} 条（{rank_days}天内）")
+            return filtered[:limit] if filtered else None
 
         except Exception as e:
             logger.error(f"ByteMuse 获取榜单异常: {str(e)}")
             return None
 
     def _get_studio_ranks(self, studio: str = "s1", limit: int = 50) -> Optional[List[Dict[str, Any]]]:
-        """获取厂牌榜单"""
+        """获取厂牌榜单（基于 release_today 多页数据 + 厂牌过滤）"""
         try:
+            # ByteMuse /api/v1/ranks 对厂牌也返回空，改用 release_today 过滤
+            # 解析厂牌名（如 s1-0 → S1, moodyz-0 → Moodyz）
             studio_key = studio.lower().replace(" ", "")
+            # 尝试从 DISCOVER_TYPES 获取，或直接用 studio 参数
             type_param = self.DISCOVER_TYPES.get(f"studio_{studio_key}", f"{studio_key}-0")
-            url = self._build_url("/api/v1/ranks")
-            params = {"type": type_param, "limit": limit}
+            # 从 type_param 提取厂牌关键词（去掉 -0 后缀）
+            studio_keyword = type_param.split("-")[0].upper() if "-" in type_param else type_param.upper()
 
-            response = RequestUtils(
-                timeout=self._timeout,
-                headers=self._get_headers()
-            ).get_res(url, params=params)
+            # 拉取多页数据
+            all_items = []
+            for page in range(1, 11):
+                page_data = self._get_release_today(page, 100)
+                if not page_data:
+                    break
+                all_items.extend(page_data)
+                if len(page_data) < 100:
+                    break
 
-            if response is None or response.status_code != 200:
-                return None
+            # 按厂牌/厂牌关键字匹配过滤
+            filtered = []
+            for item in all_items:
+                item_code = (item.get("code", "") or "").upper()
+                item_studio = (item.get("studio", "") or "").upper()
+                # 匹配番号前缀（如 SSIS 开头属于 S1）或 studio 字段
+                if item_code.startswith(studio_keyword) or studio_keyword in item_studio:
+                    filtered.append(item)
 
-            data = response.json()
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "data" in data:
-                return data["data"]
-            return None
+            logger.info(f"ByteMuse {studio}厂牌: 拉取 {len(all_items)} 条，匹配 {len(filtered)} 条（关键词: {studio_keyword}）")
+            return filtered[:limit] if filtered else None
 
         except Exception as e:
             logger.error(f"ByteMuse 获取厂牌榜单异常: {str(e)}")

@@ -21,97 +21,6 @@ from app.schemas.types import MediaType, ModuleType, OtherModulesType
 from app.utils.string import StringUtils
 
 
-def _javbus_search(site: dict, keyword: str) -> Tuple[bool, list]:
-    """
-    JavBus 番号磁力搜索（通过 javbus-api）
-    """
-    import json
-    import time
-    import urllib.request
-    from urllib.parse import quote
-
-    api_base = "http://10.0.0.1:8922"
-    keyword = keyword.strip().replace(' ', '-')
-    if not keyword:
-        return True, []
-
-    results = []
-    last_req = 0.0
-
-    def api_get(path):
-        nonlocal last_req
-        elapsed = time.time() - last_req
-        if elapsed < 1.5:
-            time.sleep(1.5 - elapsed)
-        last_req = time.time()
-        try:
-            proxy_handler = urllib.request.ProxyHandler({})
-            opener = urllib.request.build_opener(proxy_handler)
-            req = urllib.request.Request(
-                f"{api_base}{path}",
-                headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-            )
-            with opener.open(req, timeout=20) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except Exception as e:
-            logger.warning(f"JavBus API 请求失败: {path} -> {e}")
-            return None
-
-    def parse_size(size_str):
-        if not size_str:
-            return 0.0
-        try:
-            val = float(''.join(c for c in size_str if c.isdigit() or c == '.'))
-            if 'TB' in size_str.upper():
-                val *= 1024
-            elif 'MB' in size_str.upper():
-                val /= 1024
-            return val
-        except (ValueError, TypeError):
-            return 0.0
-
-    search_data = api_get(f"/api/movies/search?keyword={quote(keyword)}")
-    if not search_data:
-        return True, []
-
-    movies = search_data.get('movies', []) if isinstance(search_data, dict) else search_data
-    if not movies:
-        return True, []
-
-    logger.info(f"【JavBus】搜索 {keyword}，找到 {len(movies)} 个结果")
-
-    for movie in movies[:10]:
-        movie_id = movie.get('id', '')
-        if not movie_id:
-            continue
-
-        detail = api_get(f"/api/movies/{movie_id}")
-        if not detail or 'gid' not in detail:
-            continue
-
-        magnets_data = api_get(f"/api/magnets/{movie_id}?gid={detail['gid']}&uc={detail['uc']}")
-        if not magnets_data:
-            continue
-
-        magnets_list = magnets_data if isinstance(magnets_data, list) else magnets_data.get('magnets', [])
-        for m in magnets_list:
-            magnet = m.get('link') or m.get('magnet', '')
-            if not magnet:
-                continue
-            name = m.get('title') or m.get('name', '')
-            size_str = m.get('size', '') or ''
-            date = m.get('shareDate') or m.get('date', '')
-            results.append({
-                'title': f"{name} [{size_str}]" if size_str else name,
-                'enclosure': magnet,
-                'size': parse_size(size_str),
-                'description': f"{movie_id} | {name} | {size_str} | {date}",
-            })
-
-    logger.info(f"【JavBus】搜索完成，共 {len(results)} 个磁力链接")
-    return True, results
-
-
 class IndexerModule(_ModuleBase):
     """
     索引模块
@@ -306,11 +215,6 @@ class IndexerModule(_ModuleBase):
                     mtype=mtype,
                     page=page
                 )
-            elif site.get('parser') == "JavBus" or 'javbus' in str(site.get('domain', '')).lower():
-                error_flag, result = _javbus_search(
-                    site=site,
-                    keyword=search_word
-                )
             elif site.get('parser') == "RousiPro":
                 error_flag, result = RousiSpider(site).search(
                     keyword=search_word,
@@ -408,11 +312,6 @@ class IndexerModule(_ModuleBase):
                     keyword=search_word,
                     mtype=mtype,
                     page=page
-                )
-            elif site.get('parser') == "JavBus" or 'javbus' in str(site.get('domain', '')).lower():
-                error_flag, result = _javbus_search(
-                    site=site,
-                    keyword=search_word
                 )
             elif site.get('parser') == "RousiPro":
                 error_flag, result = await RousiSpider(site).async_search(

@@ -1,0 +1,29 @@
+services:
+  moviepilot:
+    image: mubeyout/moviepilot:2.10.2-patched
+    container_name: MoviePilot
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # 配置目录（插件、缓存等持久化数据）
+      - /mnt/nvme0n1p1/Configs/MoviePilot:/config
+      # MoviePilot 缓存
+      - /mnt/nvme0n1p1/Configs/MoviePilot/cache:/moviepilot/.cache
+      # 媒体库挂载
+      - /mnt:/mnt
+      # Docker socket（用于 docker proxy）
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - PUID=0
+      - PGID=0
+      - NGINX_PORT=3003
+      - MOVIEPILOT_AUTO_UPDATE=false
+      - SUPERUSER=mubey
+      - PROXY_HOST=http://10.0.0.1:7890
+      - GITHUB_TOKEN=<YOUR_GITHUB_TOKEN>
+      - PLUGIN_LOCAL_REPO_PATHS=/config/plugins
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
