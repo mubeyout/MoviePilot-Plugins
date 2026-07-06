@@ -1844,6 +1844,25 @@ class MetatubeSource(_PluginBase):
             filtered.append(kw)
         return filtered
 
+    def _match_keyword_in_text(self, keyword: str, search_text: str) -> bool:
+        """
+        安全的关键字匹配，对超短关键字（≤3字符）使用词边界匹配，防止子串误命中
+
+        例如："AV" 不应匹配 "AVC"（视频编码），"TM" 不应匹配 "ATMOS"（音频格式）
+        """
+        kw_len = len(keyword)
+        if kw_len <= 3:
+            # 超短关键字使用词边界匹配
+            try:
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                return re.search(pattern, search_text) is not None
+            except re.error:
+                # 正则异常时 fallback 到子串匹配
+                return keyword in search_text
+        else:
+            # 正常长度关键字使用子串匹配（保持原有行为）
+            return keyword in search_text
+
     def _add_log(self, keyword: str, result: str, status: str, message: str, category: str = ""):
         """添加日志条目"""
         if self._log_entries is None:
@@ -2040,14 +2059,14 @@ class MetatubeSource(_PluginBase):
                 custom_list = [kw.strip() for kw in category["custom"].split(',') if kw.strip()]
                 for keyword in custom_list:
                     search_keyword = keyword.upper() if not self._strict_match else keyword
-                    if search_keyword in search_title:
+                    if self._match_keyword_in_text(search_keyword, search_title):
                         logger.debug(f"Metatube: 匹配到【自定义关键字】'{keyword}' → {category_name} (标题: {title})")
                         return category_name
 
             # 优先级 2: 检查内置核心关键字（中等优先级）
             for keyword in category["built_in"]:
                 search_keyword = keyword.upper() if not self._strict_match else keyword
-                if search_keyword in search_title:
+                if self._match_keyword_in_text(search_keyword, search_title):
                     logger.debug(f"Metatube: 匹配到【内置核心关键字】'{keyword}' → {category_name} (标题: {title})")
                     return category_name
 
@@ -2057,7 +2076,7 @@ class MetatubeSource(_PluginBase):
                 if isinstance(file_keywords, list):
                     for keyword in file_keywords:
                         search_keyword = keyword.upper() if not self._strict_match else keyword
-                        if search_keyword in search_title:
+                        if self._match_keyword_in_text(search_keyword, search_title):
                             logger.debug(f"Metatube: 匹配到【扩展关键字】'{keyword}' → {category_name} (标题: {title})")
                             return category_name
 
@@ -2219,7 +2238,7 @@ class MetatubeSource(_PluginBase):
 
         # 检查自定义关键字
         for keyword in custom_keywords_list:
-            if keyword in title:
+            if self._match_keyword_in_text(keyword, title):
                 logger.info(f"Metatube: 匹配到【自定义关键字】'{keyword}' 在标题 '{title}' 中")
                 return True
 
@@ -2236,7 +2255,7 @@ class MetatubeSource(_PluginBase):
 
         # 检查内置核心关键字
         for keyword in built_in_keywords:
-            if keyword in title:
+            if self._match_keyword_in_text(keyword, title):
                 logger.info(f"Metatube: 匹配到【内置核心关键字】'{keyword}' 在标题 '{title}' 中")
                 return True
 
@@ -2249,7 +2268,7 @@ class MetatubeSource(_PluginBase):
                     # 标准化文件关键字
                     file_keywords_list = file_keywords if self._strict_match else [kw.upper() for kw in file_keywords]
                     for keyword in file_keywords_list:
-                        if keyword in title:
+                        if self._match_keyword_in_text(keyword, title):
                             logger.info(f"Metatube: 匹配到【扩展关键字】'{keyword}' 在标题 '{title}' 中")
                             return True
 
