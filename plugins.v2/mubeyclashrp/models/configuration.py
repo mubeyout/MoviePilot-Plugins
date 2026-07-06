@@ -238,7 +238,7 @@ class ClashConfig(BaseModel):
                     new_name = f"{proxy.name}-{counter}"
                     counter += 1
                 if new_name != proxy.name:
-                    proxy.name = new_name
+                    proxy.root.name = new_name
                     logger.info(f"代理节点名称冲突，重命名: {proxy.name} -> {new_name}")
                 self.proxies.append(proxy)
                 existing_proxy_names.add(new_name)
@@ -256,7 +256,7 @@ class ClashConfig(BaseModel):
                     new_name = f"{pg.name}-{counter}"
                     counter += 1
                 if new_name != pg.name:
-                    pg.name = new_name
+                    pg.root.name = new_name
                     logger.info(f"代理组名称冲突，重命名: {pg.name} -> {new_name}")
                 self.proxy_groups.append(pg)
                 existing_pg_names.add(new_name)
