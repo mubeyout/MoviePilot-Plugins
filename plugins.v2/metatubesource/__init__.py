@@ -410,7 +410,8 @@ class MetatubeSource(_PluginBase):
                                     doubanid: Optional[str] = None,
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
-                                    cache: bool = True):
+                                    cache: bool = True,
+                                    **kwargs):
             """
             劫持系统媒体识别方法（关键字优先模式）
 
@@ -435,7 +436,7 @@ class MetatubeSource(_PluginBase):
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
                 result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                          episode_group, cache)
+                                                          episode_group, cache, **kwargs)
                 if result:
                     return result
 
@@ -445,7 +446,7 @@ class MetatubeSource(_PluginBase):
 
             # 插件未启用，直接调用原始方法
             return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                    episode_group, cache)
+                                                    episode_group, cache, **kwargs)
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -453,7 +454,8 @@ class MetatubeSource(_PluginBase):
                                                 doubanid: Optional[str] = None,
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
-                                                cache: bool = True):
+                                                cache: bool = True,
+                                                **kwargs):
             """
             异步劫持系统媒体识别方法（关键字优先模式）
 
@@ -478,7 +480,7 @@ class MetatubeSource(_PluginBase):
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
                 result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                      episode_group, cache)
+                                                                      episode_group, cache, **kwargs)
                 if result:
                     return result
 
@@ -488,7 +490,7 @@ class MetatubeSource(_PluginBase):
 
             # 插件未启用，直接调用原始方法
             return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                episode_group, cache)
+                                                                episode_group, cache, **kwargs)
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))

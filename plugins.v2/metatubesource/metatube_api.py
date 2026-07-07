@@ -157,6 +157,8 @@ class MetatubeApiClient:
         # 移除常见的无关前缀和后缀
         name = re.sub(r'\[.*?\]', ' ', name)
         name = re.sub(r'\(.*?\)', ' ', name)
+        name = re.sub(r'\d{3,}\.com[@＠]', '', name)
+        name = re.sub(r'[a-zA-Z0-9_-]+\.[a-z]+[@＠]', '', name)
         name = re.sub(r'[@＠].*', '', name)
 
         # 尝试匹配各种番号格式
