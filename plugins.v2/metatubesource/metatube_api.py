@@ -151,8 +151,8 @@ class MetatubeApiClient:
         if not filename:
             return None
 
-        # 清理文件名
-        name = filename.upper().strip()
+        # 清理文件名（先清理再大写，避免 .com 等小写匹配失效）
+        name = filename.strip()
 
         # 移除常见的无关前缀和后缀
         name = re.sub(r'\[.*?\]', ' ', name)
@@ -160,6 +160,9 @@ class MetatubeApiClient:
         name = re.sub(r'\d{3,}\.com[@＠]', '', name)
         name = re.sub(r'[a-zA-Z0-9_-]+\.[a-z]+[@＠]', '', name)
         name = re.sub(r'[@＠].*', '', name)
+
+        # 清理完成后再大写化
+        name = name.upper()
 
         # 尝试匹配各种番号格式
         for pattern in MetatubeApiClient.NUMBER_PATTERNS:

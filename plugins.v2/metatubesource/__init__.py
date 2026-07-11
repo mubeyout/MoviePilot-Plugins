@@ -38,7 +38,7 @@ class MetatubeSource(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Metatube.png"
     # 插件版本
-    plugin_version = "1.1.0"
+    plugin_version = "2.0.0"
     # 插件作者
     plugin_author = "MUBEY"
     # 作者主页
