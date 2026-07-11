@@ -1,3 +1,4 @@
+# Category: 插件入口
 """
 Metatube 媒体识别插件
 通过 Metatube API 识别番号媒体信息
@@ -55,6 +56,7 @@ class MetatubeSource(_PluginBase):
     SUBCATEGORY_WESTERN = "欧美系"
     SUBCATEGORY_CHINESE = "中文系"
     SUBCATEGORY_OTHER = "其他"
+    SUBCATEGORY_SKIP = "__SKIP__"  # 特殊标记：应该跳过识别
 
     # 关键字配置文件路径
     KEYWORDS_FILE_PATH = "keywords.json"  # 插件根目录下的 JSON 文件
@@ -113,72 +115,61 @@ class MetatubeSource(_PluginBase):
     ]
 
     # 中文系核心关键词（主流传媒品牌）
+    # 优化: 移除过于宽泛的关键字，提高识别精度（v1.1.1）
     BUILT_IN_CHINESE_KEYWORDS = [
-        # === 主流传媒品牌 ===
+        # === 主流传媒品牌（高优先级，强特征） ===
         "MD", "MD-", "MDCN", "麻豆", "麻豆傳媒", "MADOU",
         "MX", "MX-", "精东", "精東傳媒",
         "TM", "TM-", "天美", "天美傳媒",
         "PMC", "PMC-", "蜜桃", "蜜桃傳媒",
-        "AV", "AV-", "91制片", "九一制片",
+        "91制片", "九一制片",
         "TW", "TW-", "台湾", "台灣傳媒",
 
-        # === 网红/探花系列 ===
-        "约炮", "网红", "探花", "小宝寻花",
-        "李寻花", "沈先生",
+        # === 探花系列（特定成人内容） ===
+        "约炮", "探花", "小宝寻花", "李寻花", "沈先生",
+        # 移除 "网红" - 过于宽泛，普通网红视频很多
 
-        # === 常见标识 ===
-        "传媒", "傳媒", "国产", "自拍", "偷拍", "露脸",
-        "原创", "独家", "首发", "精品",
-
-        # === 成人内容标识 ===
+        # === 成人内容标识（强特征） ===
+        "传媒", "傳媒", "自拍", "偷拍", "露脸",
         "成人", "色情", "黄色", "情色",
-        "做爱", "性交", "屄", "逼", "屌", "鸡巴",
-        "操", "干", "口交", "肛交",
+        "做爱", "性交", "口交", "肛交",
+        # 移除 "国产" - 过于宽泛
 
-        # === 体型特征 ===
+        # === 体型特征（保留，强特征） ===
         "巨乳", "大胸", "爆乳", "翘臀",
         "丝袜", "美腿", "黑丝", "裸体", "全裸",
 
-        # === 职业/身份 ===
-        "空姐", "护士", "老师", "学生", "女仆",
-        "少妇", "人妻", "熟女", "模特", "主播",
+        # === 职业/身份（优化 - 移除通用词） ===
+        "空姐", "护士", "女仆",  # 保留特定角色
+        "少妇", "人妻", "熟女",  # 保留成人特定
+        # 移除 "老师", "学生", "模特", "主播" - 过于宽泛
 
         # === 视频特征 ===
         "无码", "有码", "内射", "颜射",
-        "高清", "超清", "蓝光", "中文字幕",
+        "中文字幕",
+
+        # === 新增：组合特征（更精确的成人内容标识） ===
+        "福利视频", "大秀", "私拍", "流出",
+        "门事件", "艳照", "不雅视频",
     ]
 
     # 其他核心关键词（通用特征）
+    # 优化: 移除单字关键字(屄,逼,屌,操,干)和画质/字幕等通用词汇
     BUILT_IN_OTHER_KEYWORDS = [
-        # === 画质 ===
-        "高清", "超清", "蓝光", "HD", "FHD",
-
         # === 编码类型 ===
-        "无码", "有码", "破解", "无修",
-
-        # === 字幕 ===
-        "中文字幕", "字幕",
-
-        # === 音轨 ===
-        "原声", "国语", "粤语",
-
-        # === 版本 ===
-        "完整版", "无删减版", "流出", "泄露",
+        "破解", "无修",
 
         # === 成人标识 ===
-        "成人", "AV", "成人视频", "A片",
+        "AV", "成人视频", "A片",
 
-        # === 生理特征 ===
-        "屄", "逼", "屌", "鸡巴",
-
-        # === 性行为 ===
-        "操", "干", "口交", "肛交",
+        # === 版本特征 (移除可能误判的"完整版") ===
+        "无删减版", "流出", "泄露",
     ]
 
     # 内置排除关键字（匹配后直接跳过分类）
     BUILT_IN_EXCLUDE_KEYWORDS = [
         # === 画质标记 ===
-        "UHD", "HDR", "HDR10", "HDR10+", "DOLBY", "DOLBY-VISION","HDR-10"
+        "UHD", "HDR", "HDR10", "HDR10+", "DOLBY", "DOLBY-VISION", "HDR-10",
         "FHD", "HD", "SD", "LD", "ED",
 
         # === 分辨率 ===
@@ -194,65 +185,135 @@ class MetatubeSource(_PluginBase):
         "MP3", "OPUS", "OGG", "WAV", "MKA",
         "TRUEHD", "DOLBY-ATMOS", "ATMOS",
         "EAC3", "DDP", "DD",
+        "LPCM", "PCM",
 
         # === 视频格式 ===
-        "REMUX", "WEB-DL", "WEBRIP", "WEB-DL", "WEB",
-        "BLURAY", "BDRIP", "BRRIP", "BD", "DVD",
-        "DVDRIP", "HDDVD", "HDTV", "PDTV",
-        "SATRIP", "TVRIP", "CAM", "TS", "TC",
+        "REMUX", "WEB-DL", "WEBRIP", "WEB", "WEB-DL",
+        "BLURAY", "BLU-RAY", "BDRIP", "BRRIP", "BD", "DVD",
+        "DVDRIP", "HDDVD", "HDTV", "PDTV", "TVRIP",
+        "SATRIP", "CAM", "TS", "TC",
         "TELESYNC", "TELECINE",
 
         # === 制式 ===
         "NTSC", "PAL", "SECAM", "SECA",
 
-
         # === 来源标记 ===
-        "NETFLIX", "DISNEY+", "HULU", "AMZN",
+        "NETFLIX", "DISNEY+", "HULU", "AMZN", "AMAZON",
         "HBO", "HBO-MAX", "PARAMOUNT+",
         "APPLE-TV", "APPLE+",
-        "PRIME", "AMAZON",
-        "CRUNCHYROLL", "FUNIMATION",
+        "PRIME", "CRUNCHYROLL", "FUNIMATION",
+        "BILIBILI", "YOUTUBE", "IQIYI", "TENCENT",
+        "YOUKU", "MANGO", "TV", "VLC", "MM",
+        "KYTICE", "MONUMENT", "FULLBRUTALITY", "FRDS",
+        "MTEAM", "MT", "CWAHD", "LAZERS", "LWRTD",
+        "PROPER", "REPACK", "INTERNAL", "LIMITED",
 
         # === 语言标记 ===
         "DUAL", "MULTI", "MULTISUBS",
-        "ENGLISH", "JAPANESE", "CHINESE",
-        "EN", "JP", "CN", "ZH",
+        "ENGLISH", "JAPANESE", "CHINESE", "CANTONESE", "MANDARIN",
+        "EN", "JP", "CN", "ZH", "ZH-CN", "ZH-TW",
         "ENG", "JPN", "CHN", "ZHO",
+        "GBR", "USA", "JPN", "CHN", "HKG", "KOR", "TWN",
 
         # === 版本标记 ===
         "DIRECTORS-CUT", "EXTENDED", "UNCUT",
         "UNCENSORED", "UNRATED",
-        "REMASTERED", "REPACK", "PROPER",
-        "LIMITED", "INTERNAL", "NUKED",
+        "PROPER", "REPACK", "LIMITED", "INTERNAL",
+        "REMASTERED", "RESTORED", "THEATRICAL", "EXTENDED",
+        "SPECIAL", "COLLECTOR", "ULTIMATE", "DELUXE",
 
-        # === 技术参数 ===
-        "10BIT", "8BIT", "HI10P", "HI8P",
-        "HYBRID", "COMPRESS", "RE-ENCODE",
+        # === 发行标记 ===
+        "COMPLETE", "SEASON", "EPISODE", "EP", "S",
+        "SCENE", "COMPILATION", "ANTHOLOGY",
+        "BOXSET", "COLLECTION", "SERIES", "SAGA",
 
-        # === 其他常见标记 ===
-        "SAMPLE", "PROOF", "NFO", "SFV",
-        "SUBS", "SUBPACK", "SUBBED",
-        "DUBBED", "DUAL-AUDIO",
-        "COMPLETE", "FULL", "COMPLETE-SEASON",
-        "SEASON", "S01", "S02", "S03",
-        "EPISODE", "E01", "E02", "E03",
+        # === 常见影视类型 ===
+        "ANIME", "DRAMA", "COMEDY", "ACTION", "THRILLER",
+        "HORROR", "ROMANCE", "DOCUMENTARY", "BIography",
+        "FANTASY", "SCI-FI", "ADVENTURE", "CRIME", "MYSTERY",
 
-        # === 硬件相关 ===
-        "OLED", "LED", "LCD", "PLASMA",
-        "HDRIP", "SDR", "BT2020", "BT709",
+        # === 中文剧集/电影常见词 ===
+        "修仙", "修真", "武侠", "仙侠", "玄幻",
+        "凡人", "仙逆", "遮天", "剑来", "永生", "一念永恒", "牧神记",
+        "师兄", "师弟", "师父", "师傅", "宗门", "门派",
+        "修炼", "渡劫", "飞升", "元婴", "金丹", "筑基",
+        "动漫", "动画", "剧场版", "TV版", "OVA", "OAD",
+        "剧集", "连续剧", "电视剧", "网剧",
 
-        # === 压缩标记 ===
-        "COMPRESSED", "ENCODED", "RE-ENC",
-        "CRRIP", "DVDR", "R5",
+        # === 常见动漫/剧集标题 ===
+        "咒术回战", "七王国的骑士", "权力的游戏", "王国", "骑士",
 
-        # === 质量标记 ===
-        "HQ", "LQ", "PDTV", "DSR",
-        "HDTVRIP", "HDTV",
-        "SATRIP", "TVRIP",
+        # === 中文常见标识 ===
+        "国语", "粤语", "中字", "中英", "双语",
+        "简体", "繁体", "字幕", "内嵌", "外挂",
+        "合集", "收藏", "珍藏", "纪念",
 
-        # === 分辨率简写 ===
-        "4K60", "1080P60", "720P60",
-        "4K60FPS", "1080P60FPS", "720P60FPS"
+        # === 英文常见标识 ===
+        "AKA", "ALSO", "KNOWN", "AS", "COMPLETE",
+        "PART", "PART1", "PART2", "PART3",
+        "VOL", "VOL1", "VOL2", "VOLUME",
+        "EDITION", "VERSION", "RELEASE",
+
+        # === 地区标识 ===
+        "USA", "UK", "GBR", "JPN", "CHN", "HKG", "KOR", "TWN",
+        "EUR", "ASIA", "WORLD", "GLOBAL", "INTERNATIONAL",
+
+        # === 发行组标识 ===
+        "FGT", "FYQ", "EZTV", "RARBG", "YIFY", "YTS",
+        "SPARKS", "FLUX", "GT", "QTS", "SMURF",
+
+        # === 特殊格式 ===
+        "3D", "2D", "VR", "MINIMAL", "NO-FRILLS",
+        "HYBRID", "RE-ENCODE", "RE-MUX", "REPACK",
+
+        # === 其他技术标记 ===
+        "HYBRID", "COMPRESS", "CRRIP", "DVDR",
+        "R5", "READNFO", "NFO", "SFV", "MD5",
+        "SAMPLE", "PROOF", "SUBS", "SUBPACK",
+        "DUBBED", "SUBBED", "SYNCED", "FIXED",
+
+        # === 编码器标识 ===
+        "XVID", "DIVX", "RMVB", "WMV", "AVI",
+        "MKV", "MP4", "MOV", "FLV", "TS", "M2TS",
+
+        # === 其他 ===
+        "RELEASE", "BLURAYDISC", "DISC", "DISC1", "DISC2",
+        "CD1", "CD2", "DVD1", "DVD2", "DVD5", "DVD9",
+        "PAL", "NTSC", "SECAM",
+
+        # === 档案组/发布组 ===
+        "CHD", "CHDTV", "CHDBITS", "HDChina", "TTG",
+        "HDSky", "MTeam", "CMCT", "FRDS", "ADWeb",
+        "UBWEB", "HDKWeb", "MONUMENT", "KYTiCE",
+
+        # === 文件质量标记 ===
+        "HQ", "LQ", "HIGH", "LOW", "BEST",
+        "GOOD", "BAD", "PROPER", "NUKE",
+
+        # ==================== 新增：非成人内容排除标识 ====================
+        # === 音乐演唱会标识 ===
+        "LIVE", "CONCERT", "ONEMAN", "TOUR", "FESTIVAL",
+        "演唱会", "音乐会", "现场表演", "演出", "LIVE-HOUSE",
+
+        # === 短剧/网剧标识 ===
+        "SKIT", "短剧", "网剧", "小剧场", "小视频",
+        "微电影", "短片", "SHORT-FILM", "MINI-DRAMA",
+
+        # === 综艺/访谈标识 ===
+        "VARIETY", "TALK-SHOW", "TALKSHOW",
+        "综艺", "访谈", "脱口秀", "TALK",
+
+        # === 歌曲/专辑标识 ===
+        "SONG", "SINGLE", "ALBUM", "MV", "MUSIC-VIDEO",
+        "歌曲", "单曲", "专辑", "音乐视频", "原声带", "OST",
+
+        # === 视频创作者标识 ===
+        "YOUTUBER", "UP主", "VLOG", "VLOGGER",
+        "视频博主", "自媒体",
+
+        # === 体育/游戏标识 ===
+        "E-SPORTS", "电子竞技", "游戏",
+        "HIGHLIGHTS", "集锦", "比赛", "MATCH",
     ]
 
     # ==================== 命名模板预设 ====================
@@ -332,9 +393,14 @@ class MetatubeSource(_PluginBase):
 
     def init_plugin(self, config: dict = None):
         """初始化插件"""
-        # 初始化搜索频率限制
-        self._last_search_time = None
-        self._search_interval = 0.5  # 500ms 最小搜索间隔
+        # 初始化线程安全的频率限制器
+        from .utils.concurrency import RateLimiter
+        self._rate_limiter = RateLimiter(interval=0.5)
+
+        # 识别去重缓存：避免短时间内重复识别同一项目
+        # {标题key: (结果状态, 时间戳)}
+        self._recognize_cache: Dict[str, Tuple[str, float]] = {}
+        self._recognize_cache_ttl = 3600  # 缓存有效期 1 小时（秒）
 
         plugin_instance: MetatubeSource = self
 
@@ -344,7 +410,8 @@ class MetatubeSource(_PluginBase):
                                     doubanid: Optional[str] = None,
                                     bangumiid: Optional[int] = None,
                                     episode_group: Optional[str] = None,
-                                    cache: bool = True):
+                                    cache: bool = True,
+                                    **kwargs):
             """
             劫持系统媒体识别方法（关键字优先模式）
 
@@ -369,7 +436,7 @@ class MetatubeSource(_PluginBase):
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
                 result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                          episode_group, cache)
+                                                          episode_group, cache, **kwargs)
                 if result:
                     return result
 
@@ -379,7 +446,7 @@ class MetatubeSource(_PluginBase):
 
             # 插件未启用，直接调用原始方法
             return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                    episode_group, cache)
+                                                    episode_group, cache, **kwargs)
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -387,7 +454,8 @@ class MetatubeSource(_PluginBase):
                                                 doubanid: Optional[str] = None,
                                                 bangumiid: Optional[int] = None,
                                                 episode_group: Optional[str] = None,
-                                                cache: bool = True):
+                                                cache: bool = True,
+                                                **kwargs):
             """
             异步劫持系统媒体识别方法（关键字优先模式）
 
@@ -412,7 +480,7 @@ class MetatubeSource(_PluginBase):
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
                 result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                      episode_group, cache)
+                                                                      episode_group, cache, **kwargs)
                 if result:
                     return result
 
@@ -422,7 +490,7 @@ class MetatubeSource(_PluginBase):
 
             # 插件未启用，直接调用原始方法
             return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                episode_group, cache)
+                                                                episode_group, cache, **kwargs)
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))
@@ -471,6 +539,9 @@ class MetatubeSource(_PluginBase):
             self._jav_number_auto_match = bool(config.get("jav_number_auto_match") or True)
             # 搜索数据源配置
             self._search_enabled = bool(config.get("search_enabled") or False)
+            # 小文件配置
+            self._skip_small_files = bool(config.get("skip_small_files") or False)
+            self._small_file_threshold = int(config.get("small_file_threshold") or 100)
             # 新增配置项
             self._exclude_keywords = config.get("exclude_keywords") or ""
             self._keywords_file_path = "keywords.json"  # 固定路径，不再提供配置
@@ -611,15 +682,12 @@ class MetatubeSource(_PluginBase):
             return []
 
         # 搜索频率限制（避免前端自动完成造成的大量请求）
-        current_time = datetime.now()
-        if self._last_search_time:
-            time_diff = (current_time - self._last_search_time).total_seconds()
-            if time_diff < self._search_interval:
-                logger.debug(f"Metatube: 搜索频率过高，跳过搜索: '{title}' (间隔: {time_diff:.2f}s)")
-                return []
+        if not self._rate_limiter.acquire():
+            wait_time = self._rate_limiter.get_wait_time()
+            logger.debug(f"Metatube: 搜索频率过高，跳过搜索: '{title}' (需等待 {wait_time:.2f}s)")
+            return []
 
         try:
-            self._last_search_time = current_time
             results = self._metatube_client.search(title)
             if not results:
                 return []
@@ -683,25 +751,43 @@ class MetatubeSource(_PluginBase):
             {
                 "component": "VForm",
                 "content": [
+                    # ==================== 功能开关 ====================
                     {
                         "component": "VRow",
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2 mt-4"},
+                                        "text": "⚙️ 功能开关"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "enabled",
-                                            "label": "启用插件"
+                                            "label": "启用插件",
+                                            "hint": "开启后将自动识别番号媒体"
                                         },
                                     }
-                                ],
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -711,11 +797,11 @@ class MetatubeSource(_PluginBase):
                                             "hint": "区分大小写和全半角"
                                         },
                                     }
-                                ],
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -725,11 +811,16 @@ class MetatubeSource(_PluginBase):
                                             "hint": "在日志中显示详细失败原因"
                                         },
                                     }
-                                ],
-                            },
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -740,43 +831,10 @@ class MetatubeSource(_PluginBase):
                                         }
                                     }
                                 ]
-                            }
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "theporndb_enabled",
-                                            "label": "启用ThePornDB",
-                                            "hint": "欧美系内容使用ThePornDB识别"
-                                        }
-                                    }
-                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "bytemuse_enabled",
-                                            "label": "启用ByteMuse",
-                                            "hint": "启用ByteMuse作为主要识别源"
-                                        }
-                                    }
-                                ]
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -790,7 +848,7 @@ class MetatubeSource(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -801,10 +859,43 @@ class MetatubeSource(_PluginBase):
                                         }
                                     }
                                 ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "theporndb_enabled",
+                                            "label": "启用ThePornDB",
+                                            "hint": "欧美系内容使用ThePornDB识别"
+                                        }
+                                    }
+                                ]
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "bytemuse_enabled",
+                                            "label": "启用ByteMuse",
+                                            "hint": "启用ByteMuse作为主要识别源"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -816,7 +907,28 @@ class MetatubeSource(_PluginBase):
                                     }
                                 ]
                             }
-                        ],
+                        ]
+                    },
+                    # ==================== 基础设置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "🔧 基础设置"
+                                    }
+                                ]
+                            }
+                        ]
                     },
                     {
                         "component": "VRow",
@@ -831,7 +943,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "api_url",
                                             "label": "Metatube API地址",
                                             "placeholder": "http://127.0.0.1:8080",
-                                            "hint": "Metatube服务地址"
+                                            "hint": "Metatube服务地址",
+                                            "prepend-icon": "mdi-server"
                                         }
                                     }
                                 ]
@@ -846,7 +959,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "theporndb_api_token",
                                             "label": "ThePornDB API Token",
                                             "placeholder": "从 https://theporndb.net 获取",
-                                            "hint": "登录后在设置页面获取 Metadata API Token"
+                                            "hint": "登录后在设置页面获取 Metadata API Token",
+                                            "prepend-icon": "mdi-key"
                                         }
                                     }
                                 ]
@@ -866,7 +980,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "bytemuse_url",
                                             "label": "ByteMuse API地址",
                                             "placeholder": "http://127.0.0.1:3750",
-                                            "hint": "ByteMuse服务地址"
+                                            "hint": "ByteMuse服务地址",
+                                            "prepend-icon": "mdi-server-network"
                                         }
                                     }
                                 ]
@@ -881,7 +996,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "bytemuse_username",
                                             "label": "ByteMuse 用户名",
                                             "placeholder": "请输入用户名",
-                                            "hint": "ByteMuse登录用户名"
+                                            "hint": "ByteMuse登录用户名",
+                                            "prepend-icon": "mdi-account"
                                         }
                                     }
                                 ]
@@ -897,7 +1013,8 @@ class MetatubeSource(_PluginBase):
                                             "label": "ByteMuse 密码",
                                             "placeholder": "请输入密码",
                                             "hint": "ByteMuse登录密码",
-                                            "type": "password"
+                                            "type": "password",
+                                            "prepend-icon": "mdi-lock"
                                         }
                                     }
                                 ]
@@ -915,16 +1032,39 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextField",
                                         "props": {
                                             "model": "timeout",
-                                            "label": "超时时间",
+                                            "label": "API超时时间",
                                             "type": "number",
                                             "placeholder": "30",
                                             "suffix": "秒",
-                                            "hint": "API请求超时时间（1-60秒）"
+                                            "hint": "API请求超时时间（1-60秒）",
+                                            "prepend-icon": "mdi-clock-outline"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "max_logs",
+                                            "label": "日志记录数",
+                                            "type": "number",
+                                            "placeholder": "100",
+                                            "hint": "最多保留的识别日志条数",
+                                            "prepend-icon": "mdi-format-list-bulleted"
                                         }
                                     }
                                 ]
                             }
                         ]
+                    },
+                    # ==================== 文件过滤设置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
                     },
                     {
                         "component": "VRow",
@@ -936,7 +1076,70 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "div",
                                         "props": {"class": "text-h6 mb-2"},
-                                        "text": "命名规则配置"
+                                        "text": "📁 文件过滤设置"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "skip_small_files",
+                                            "label": "跳过小文件",
+                                            "hint": "跳过小于指定大小的文件识别"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "small_file_threshold",
+                                            "label": "小文件阈值",
+                                            "placeholder": "100",
+                                            "suffix": "MB",
+                                            "hint": "小于此大小的文件将被跳过",
+                                            "type": "number",
+                                            "prepend-icon": "mdi-file-outline"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": []
+                            }
+                        ]
+                    },
+                    # ==================== 命名规则配置 ====================
+                    {
+                        "component": "VDivider",
+                        "props": {"class": "my-4"}
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "div",
+                                        "props": {"class": "text-h6 mb-2"},
+                                        "text": "📝 命名规则配置"
                                     }
                                 ]
                             }
@@ -964,7 +1167,8 @@ class MetatubeSource(_PluginBase):
                                                 {"title": "完整格式", "value": "full"},
                                                 {"title": "自定义模板", "value": "custom"}
                                             ],
-                                            "hint": "选择文件重命名格式"
+                                            "hint": "选择文件重命名格式",
+                                            "prepend-icon": "mdi-rename-box"
                                         }
                                     }
                                 ]
@@ -980,7 +1184,8 @@ class MetatubeSource(_PluginBase):
                                             "label": "演员数量",
                                             "type": "number",
                                             "placeholder": "2",
-                                            "hint": "最多显示几位演员"
+                                            "hint": "最多显示几位演员",
+                                            "prepend-icon": "mdi-account-multiple"
                                         }
                                     }
                                 ]
@@ -995,7 +1200,8 @@ class MetatubeSource(_PluginBase):
                                             "model": "custom_naming_template",
                                             "label": "自定义模板",
                                             "placeholder": "{number} {actor} [{studio}] ({year})",
-                                            "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}"
+                                            "hint": "变量: {number} {actor} {studio} {label} {year} {series} {title}",
+                                            "prepend-icon": "mdi-code-braces"
                                         }
                                     }
                                 ]
@@ -1012,7 +1218,7 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "div",
                                         "props": {"class": "text-h6 mb-2"},
-                                        "text": "关键词配置（按分类管理）"
+                                        "text": "🔑 关键词配置（按分类管理）"
                                     }
                                 ]
                             }
@@ -1029,7 +1235,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_japanese_keywords",
-                                            "label": "日系关键词",
+                                            "label": "🇯🇵 日系关键词",
                                             "placeholder": "SSIS, FC2, HEYZO...",
                                             "rows": 2,
                                             "hint": "日系内容识别关键词，逗号分隔"
@@ -1045,7 +1251,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_western_keywords",
-                                            "label": "欧美系关键词",
+                                            "label": "🇺🇸 欧美系关键词",
                                             "placeholder": "BRAZZERS, BLACKED, TUSHY...",
                                             "rows": 2,
                                             "hint": "欧美系内容识别关键词，逗号分隔"
@@ -1066,7 +1272,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_chinese_keywords",
-                                            "label": "中文系关键词",
+                                            "label": "🇨🇳 中文系关键词",
                                             "placeholder": "MD, 约炮, 探花...",
                                             "rows": 2,
                                             "hint": "中文系内容识别关键词，逗号分隔"
@@ -1082,7 +1288,7 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "custom_other_keywords",
-                                            "label": "其他关键词",
+                                            "label": "📦 其他关键词",
                                             "placeholder": "高清, 无码, 有码...",
                                             "rows": 2,
                                             "hint": "其他通用特征关键词，逗号分隔"
@@ -1103,10 +1309,10 @@ class MetatubeSource(_PluginBase):
                                         "component": "VTextarea",
                                         "props": {
                                             "model": "exclude_keywords",
-                                            "label": "排除关键词",
+                                            "label": "🚫 排除关键词（匹配后直接跳过）",
                                             "placeholder": "4K, UHD, HDR, FHD, HD, 2160P, 1080P, 720P, 60FPS, H.265, H.264, HEVC, XVID, WEB-DL, REMUX, BLURAY...",
                                             "rows": 3,
-                                            "hint": "匹配后直接跳过分类的关键词（画质标记、分辨率、编码格式等），逗号分隔。内置42个排除关键字：4K/UHD/HDR/FHD/HD/SD/2160P/1080P/720P/480P/360P/60FPS/120FPS/240FPS/H.265/H.264/HEVC/XVID/X264/X265/VC-1/VP9/AV1/AC3/DTS/AAC/FLAC/REMUX/WEB-DL/WEBRIP/BLURAY/NTSC/PAL/SECA/CD1/CD2/DISC1/DISC2"
+                                            "hint": "匹配后直接跳过分类的关键词（画质标记、分辨率、编码格式等），逗号分隔。内置排除关键字已包含常见画质和技术标记"
                                         }
                                     }
                                 ]
@@ -1558,6 +1764,37 @@ class MetatubeSource(_PluginBase):
         """构建分类字符串"""
         return f"{self.CATEGORY_PREFIX}/{subcategory}"
 
+    def _get_file_size_mb(self, meta: MetaBase, kwargs: dict) -> Optional[float]:
+        """
+        获取文件大小（MB）
+
+        :param meta: 元数据对象
+        :param kwargs: 额外参数，可能包含文件路径
+        :return: 文件大小（MB），如果无法获取则返回 None
+        """
+        try:
+            # 尝试从 kwargs 中获取文件路径
+            file_path = kwargs.get('path') or kwargs.get('file_path') or kwargs.get('filepath')
+
+            if file_path:
+                # 从文件路径获取大小
+                from pathlib import Path
+                path = Path(file_path)
+                if path.exists() and path.is_file():
+                    size_bytes = path.stat().st_size
+                    size_mb = size_bytes / (1024 * 1024)  # 转换为 MB
+                    return size_mb
+
+            # 尝试从 meta 对象获取文件大小（如果有）
+            if hasattr(meta, 'size') and meta.size:
+                size_mb = meta.size / (1024 * 1024)
+                return size_mb
+
+            return None
+        except Exception as e:
+            logger.debug(f"Metatube: 获取文件大小失败 - {str(e)}")
+            return None
+
     def _update_config(self):
         """更新配置"""
         self.update_config({
@@ -1585,7 +1822,9 @@ class MetatubeSource(_PluginBase):
             "bytemuse_username": self._bytemuse_username,
             "bytemuse_password": self._bytemuse_password,
             "jav_number_auto_match": self._jav_number_auto_match,
-            "search_enabled": self._search_enabled
+            "search_enabled": self._search_enabled,
+            "skip_small_files": self._skip_small_files,
+            "small_file_threshold": self._small_file_threshold
         })
 
     @staticmethod
@@ -1606,6 +1845,25 @@ class MetatubeSource(_PluginBase):
                 continue
             filtered.append(kw)
         return filtered
+
+    def _match_keyword_in_text(self, keyword: str, search_text: str) -> bool:
+        """
+        安全的关键字匹配，对超短关键字（≤3字符）使用词边界匹配，防止子串误命中
+
+        例如："AV" 不应匹配 "AVC"（视频编码），"TM" 不应匹配 "ATMOS"（音频格式）
+        """
+        kw_len = len(keyword)
+        if kw_len <= 3:
+            # 超短关键字使用词边界匹配
+            try:
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+                return re.search(pattern, search_text) is not None
+            except re.error:
+                # 正则异常时 fallback 到子串匹配
+                return keyword in search_text
+        else:
+            # 正常长度关键字使用子串匹配（保持原有行为）
+            return keyword in search_text
 
     def _add_log(self, keyword: str, result: str, status: str, message: str, category: str = ""):
         """添加日志条目"""
@@ -1631,13 +1889,20 @@ class MetatubeSource(_PluginBase):
         :param failure_reason: 失败原因
         :return: 处理后的 MediaInfo 或 None
         """
+        # 使用原始标题进行分类检测（修复：原异常流程错误使用 number）
+        subcategory = self._detect_category_type(title)
+
+        # 如果没有匹配到任何成人内容关键字，直接返回 None 让系统使用 IMDB/TMDB 识别
+        # 这防止了普通电视剧/动画被错误归类为"成人/其他"
+        if subcategory == self.SUBCATEGORY_OTHER:
+            logger.info(f"Metatube: {failure_reason}，未匹配成人内容关键字，交由系统处理: {title}")
+            return None
+
         # 未启用失败自动下载，直接返回 None
         if not self._failed_download_control:
             self._add_log(number, "", "failed", f"{failure_reason}，未启用失败自动下载", category="")
             return None
 
-        # 使用原始标题进行分类检测（修复：原异常流程错误使用 number）
-        subcategory = self._detect_category_type(title)
         category = self._build_category(subcategory)
 
         # 构建日志消息
@@ -1707,15 +1972,18 @@ class MetatubeSource(_PluginBase):
         return all_keywords
 
     def _get_exclude_keywords(self) -> List[str]:
-        """获取排除关键字列表（内置 + 自定义）"""
+        """获取排除关键字列表（内置 + 自定义），过滤短关键字避免误匹配"""
         exclude_keywords = []
 
-        # 添加内置排除关键字
-        exclude_keywords.extend(self.BUILT_IN_EXCLUDE_KEYWORDS)
+        # 添加内置排除关键字（过滤单字母和双字母关键字）
+        for kw in self.BUILT_IN_EXCLUDE_KEYWORDS:
+            if len(kw) > 2:  # 仅保留长度 > 2 的关键字，避免误匹配 JAV 番号
+                exclude_keywords.append(kw)
 
-        # 添加自定义排除关键字
+        # 添加自定义排除关键字（同样过滤短关键字）
         if self._exclude_keywords:
             custom_list = [kw.strip() for kw in self._exclude_keywords.split(',') if kw.strip()]
+            custom_list = [kw for kw in custom_list if len(kw) > 2]  # 过滤短关键字
             exclude_keywords.extend(custom_list)
 
         # 标准化（非严格模式转大写）
@@ -1730,10 +1998,17 @@ class MetatubeSource(_PluginBase):
         检测标题匹配的关键字类型，返回二级分类名称（优先级: 自定义 > 内置核心 > keywords.json文件）
 
         :param title: 标题文本
-        :return: 二级分类名称：日系/欧美系/中文系/其他
+        :return: 二级分类名称：日系/欧美系/中文系/其他/__SKIP__（跳过识别）
         """
         if not title:
             return self.SUBCATEGORY_OTHER
+
+        # === 内容类型预检 ===
+        should_skip, skip_reason = self._should_skip_by_content_type(title)
+        if should_skip:
+            logger.debug(f"Metatube: 检测到{skip_reason}，跳过分类: {title}")
+            return self.SUBCATEGORY_SKIP
+        # === 内容类型预检结束 ===
 
         # 检查排除关键字
         exclude_keywords = self._get_exclude_keywords()
@@ -1741,8 +2016,8 @@ class MetatubeSource(_PluginBase):
             search_title = title.upper() if not self._strict_match else title
             for exclude_kw in exclude_keywords:
                 if exclude_kw in search_title:
-                    logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过分类: {title}")
-                    return self.SUBCATEGORY_OTHER
+                    logger.debug(f"Metatube: 匹配到排除关键字 '{exclude_kw}'，跳过识别: {title}")
+                    return self.SUBCATEGORY_SKIP  # 返回特殊标记，表示应该跳过
 
         # 标准化标题
         search_title = title
@@ -1786,14 +2061,14 @@ class MetatubeSource(_PluginBase):
                 custom_list = [kw.strip() for kw in category["custom"].split(',') if kw.strip()]
                 for keyword in custom_list:
                     search_keyword = keyword.upper() if not self._strict_match else keyword
-                    if search_keyword in search_title:
+                    if self._match_keyword_in_text(search_keyword, search_title):
                         logger.debug(f"Metatube: 匹配到【自定义关键字】'{keyword}' → {category_name} (标题: {title})")
                         return category_name
 
             # 优先级 2: 检查内置核心关键字（中等优先级）
             for keyword in category["built_in"]:
                 search_keyword = keyword.upper() if not self._strict_match else keyword
-                if search_keyword in search_title:
+                if self._match_keyword_in_text(search_keyword, search_title):
                     logger.debug(f"Metatube: 匹配到【内置核心关键字】'{keyword}' → {category_name} (标题: {title})")
                     return category_name
 
@@ -1803,11 +2078,104 @@ class MetatubeSource(_PluginBase):
                 if isinstance(file_keywords, list):
                     for keyword in file_keywords:
                         search_keyword = keyword.upper() if not self._strict_match else keyword
-                        if search_keyword in search_title:
+                        if self._match_keyword_in_text(search_keyword, search_title):
                             logger.debug(f"Metatube: 匹配到【扩展关键字】'{keyword}' → {category_name} (标题: {title})")
                             return category_name
 
         return self.SUBCATEGORY_OTHER
+
+    def _detect_content_type(self, title: str) -> str:
+        """
+        检测内容类型，优先于关键字匹配
+
+        :param title: 标题文本
+        :return: 内容类型: music/drama/variety/unknown
+        """
+        if not title:
+            return "unknown"
+
+        title_upper = title.upper()
+
+        # 1. 音乐/演唱会检测
+        music_indicators = [
+            # 演唱会标识
+            r'.*\bLIVE.*CONCERT\b.*',
+            r'.*\bONEMAN.*LIVE\b.*',
+            r'.*\bTOUR.*\d{4}\b.*',  # TOUR 2024
+            r'.*\bFESTIVAL\b.*',
+
+            # 音乐会相关中文
+            r'.*演唱会.*',
+            r'.*音乐会.*',
+            r'.*现场表演.*',
+            r'.*现场版.*',
+
+            # 歌曲格式
+            r'.*\bMV\b.*',
+            r'.*\bMUSIC\s+VIDEO\b.*',
+            r'.*\[.*?\]\s*LIVE\s*$',  # [歌名] LIVE
+
+            # 艺术家 - 演唱模式
+            r'.+演唱.*歌曲.*',
+            r'.+\s+-\s+.+\s+\(\d{4}\)$',  # 艺术家 - 歌名 (年份)
+        ]
+
+        for pattern in music_indicators:
+            if re.search(pattern, title_upper) or re.search(pattern, title):
+                return "music"
+
+        # 2. 短剧/网剧检测（支持全角括号）
+        drama_indicators = [
+            # SKIT 标识（最常见）— 不再要求在末尾，允许后面有标签
+            r'-\s*SKIT\b',
+            r'\bSKIT\b',
+
+            # 集数格式（同时支持半角和全角括号）
+            r'[（(]\d+\s*[集话部][）)]',
+            r'第\s*\d+\s*[集话部]',
+            r'\s+EP\d+\s*$',
+            r'\s+E\d+\s*$',
+
+            # 短剧标识
+            r'.*短剧.*',
+            r'.*网剧.*',
+            r'.*小剧场.*',
+            r'.*微电影.*',
+
+            # 剧集特征
+            r'.*续集.*',
+            r'.*第.*季.*',
+        ]
+
+        for pattern in drama_indicators:
+            if re.search(pattern, title):
+                return "drama"
+
+        # 3. 综艺/访谈检测
+        if any(x in title_upper for x in ['VARIETY', 'TALK SHOW', 'TALKSHOW']):
+            return "variety"
+        if any(x in title for x in ['综艺', '访谈', '脱口秀']):
+            return "variety"
+
+        return "unknown"
+
+    def _should_skip_by_content_type(self, title: str) -> tuple:
+        """
+        根据内容类型判断是否应该跳过识别
+
+        :param title: 标题文本
+        :return: (是否跳过, 跳过原因)
+        """
+        content_type = self._detect_content_type(title)
+
+        if content_type == "music":
+            return True, "音乐内容"
+        if content_type == "drama":
+            return True, "短剧/网剧"
+        if content_type == "variety":
+            return True, "综艺节目"
+
+        return False, ""
 
     def _match_keywords(self, meta: MetaBase) -> bool:
         """
@@ -1823,6 +2191,13 @@ class MetatubeSource(_PluginBase):
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
         if not title:
             return False
+
+        # === 内容类型预检 ===
+        should_skip, skip_reason = self._should_skip_by_content_type(title)
+        if should_skip:
+            logger.debug(f"Metatube: 检测到{skip_reason}，跳过关键字匹配: {title}")
+            return False
+        # === 内容类型预检结束 ===
 
         # 标准化标题
         if not self._strict_match:
@@ -1865,7 +2240,7 @@ class MetatubeSource(_PluginBase):
 
         # 检查自定义关键字
         for keyword in custom_keywords_list:
-            if keyword in title:
+            if self._match_keyword_in_text(keyword, title):
                 logger.info(f"Metatube: 匹配到【自定义关键字】'{keyword}' 在标题 '{title}' 中")
                 return True
 
@@ -1882,7 +2257,7 @@ class MetatubeSource(_PluginBase):
 
         # 检查内置核心关键字
         for keyword in built_in_keywords:
-            if keyword in title:
+            if self._match_keyword_in_text(keyword, title):
                 logger.info(f"Metatube: 匹配到【内置核心关键字】'{keyword}' 在标题 '{title}' 中")
                 return True
 
@@ -1895,7 +2270,7 @@ class MetatubeSource(_PluginBase):
                     # 标准化文件关键字
                     file_keywords_list = file_keywords if self._strict_match else [kw.upper() for kw in file_keywords]
                     for keyword in file_keywords_list:
-                        if keyword in title:
+                        if self._match_keyword_in_text(keyword, title):
                             logger.info(f"Metatube: 匹配到【扩展关键字】'{keyword}' 在标题 '{title}' 中")
                             return True
 
@@ -2812,6 +3187,38 @@ class MetatubeSource(_PluginBase):
             logger.error(f"ThePornDB JAV: 异步识别异常 - {str(e)}")
             return None
 
+    def _check_recognize_cache(self, title: str) -> Optional[str]:
+        """
+        检查识别去重缓存
+
+        :param title: 标题
+        :return: 缓存的状态字符串（skip/none/fallback+分类），None 表示未缓存
+        """
+        if not title:
+            return None
+        cache_key = title.strip()
+        if cache_key in self._recognize_cache:
+            status, ts = self._recognize_cache[cache_key]
+            if (datetime.now().timestamp() - ts) < self._recognize_cache_ttl:
+                logger.debug(f"Metatube: 命中识别缓存，跳过重复识别: {cache_key[:50]} (状态: {status})")
+                return status
+            else:
+                del self._recognize_cache[cache_key]
+        return None
+
+    def _set_recognize_cache(self, title: str, status: str):
+        """设置识别缓存"""
+        if not title:
+            return
+        cache_key = title.strip()
+        self._recognize_cache[cache_key] = (status, datetime.now().timestamp())
+        # 清理过期缓存（每次写入时顺便清理，避免无限增长）
+        now = datetime.now().timestamp()
+        expired_keys = [k for k, (_, ts) in self._recognize_cache.items()
+                       if (now - ts) >= self._recognize_cache_ttl]
+        for k in expired_keys:
+            del self._recognize_cache[k]
+
     def recognize_media(self, meta: MetaBase = None,
                         mtype: MediaType = None,
                         **kwargs) -> Optional[MediaInfo]:
@@ -2828,6 +3235,26 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
+        # 获取标题
+        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
+
+        # 去重检查：如果最近已识别过该项目，直接返回之前的结果
+        cached_status = self._check_recognize_cache(title)
+        if cached_status == "skip":
+            return None
+        elif cached_status is not None:
+            # 之前识别过（可能是 success 或 fallback），重新执行以返回 MediaInfo
+            # 但仍记录缓存命中日志
+            logger.debug(f"Metatube: 缓存命中（重新执行）: {title[:50]} (上次: {cached_status})")
+
+        # Step 0: 检查文件大小（如果启用）
+        if self._skip_small_files:
+            file_size_mb = self._get_file_size_mb(meta, kwargs)
+            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
+                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过识别: {meta.name}")
+                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
+                return None  # 返回 None，让系统使用默认识别
+
         # Step 1: 获取标题用于关键词分类检测
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
 
@@ -2836,12 +3263,20 @@ class MetatubeSource(_PluginBase):
         detected_category = self._detect_category_type(title)
         logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
 
+        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
+        if detected_category == self.SUBCATEGORY_SKIP:
+            logger.info(f"Metatube: 匹配到排除关键字，跳过识别，交由系统处理: {title}")
+            self._set_recognize_cache(title, "skip")
+            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
+
         # Step 3: 提取番号（根据分类使用不同规则）
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
             # 使用原始标题作为番号兜底，走失败处理流程
-            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            self._set_recognize_cache(title, "none")
+            return result
 
         logger.info(f"Metatube: 正在识别番号 {number} (分类: {detected_category}) ...")
 
@@ -2897,7 +3332,9 @@ class MetatubeSource(_PluginBase):
             results = self._metatube_client.search(number, fallback=True)
             if not results:
                 logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-                return self._handle_recognition_failure(number, title, "未找到匹配结果")
+                result = self._handle_recognition_failure(number, title, "未找到匹配结果")
+                self._set_recognize_cache(title, "none")
+                return result
 
             # 取第一个结果
             movie = results[0]
@@ -2918,7 +3355,7 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, mediainfo.title, "success",
                           f"来源: {movie.provider}", category=category)
             logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-
+            self._set_recognize_cache(title, "success")
             return mediainfo
 
         except Exception as e:
@@ -2926,7 +3363,9 @@ class MetatubeSource(_PluginBase):
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
             logger.error(f"Metatube: 识别异常 - {str(e)}")
             # 修复：使用 title 而不是 number 进行分类检测
-            return self._handle_recognition_failure(number, title, failure_msg)
+            result = self._handle_recognition_failure(number, title, failure_msg)
+            self._set_recognize_cache(title, "error")
+            return result
 
     async def async_recognize_media(self, meta: MetaBase = None,
                                     mtype: MediaType = None,
@@ -2944,6 +3383,14 @@ class MetatubeSource(_PluginBase):
         if not meta:
             return None
 
+        # Step 0: 检查文件大小（如果启用）
+        if self._skip_small_files:
+            file_size_mb = self._get_file_size_mb(meta, kwargs)
+            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
+                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过异步识别: {meta.name}")
+                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
+                return None  # 返回 None，让系统使用默认识别
+
         # Step 1: 获取标题
         title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
 
@@ -2951,12 +3398,25 @@ class MetatubeSource(_PluginBase):
         detected_category = self._detect_category_type(title)
         logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
 
+        # 去重检查
+        cached_status = self._check_recognize_cache(title)
+        if cached_status == "skip":
+            return None
+
+        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
+        if detected_category == self.SUBCATEGORY_SKIP:
+            logger.info(f"Metatube: 匹配到排除关键字，跳过异步识别，交由系统处理: {title}")
+            self._set_recognize_cache(title, "skip")
+            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
+
         # Step 3: 提取番号（根据分类使用不同规则）
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
             logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
             # 使用原始标题作为番号兜底，走失败处理流程
-            return self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            self._set_recognize_cache(title, "none")
+            return result
 
         logger.info(f"Metatube: 正在异步识别番号 {number} ...")
 
@@ -3032,7 +3492,7 @@ class MetatubeSource(_PluginBase):
             self._add_log(number, mediainfo.title, "success",
                           f"来源: {movie.provider}", category=category)
             logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-
+            self._set_recognize_cache(title, "success")
             return mediainfo
 
         except Exception as e:
@@ -3040,4 +3500,6 @@ class MetatubeSource(_PluginBase):
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
             logger.error(f"Metatube: 异步识别异常 - {str(e)}")
             # 修复：使用 title 而不是 number 进行分类检测
-            return self._handle_recognition_failure(number, title, failure_msg)
+            result = self._handle_recognition_failure(number, title, failure_msg)
+            self._set_recognize_cache(title, "error")
+            return result
