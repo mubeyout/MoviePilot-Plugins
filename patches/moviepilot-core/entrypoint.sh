@@ -206,11 +206,13 @@ usermod -o -u "${PUID}" moviepilot
 chown -R moviepilot:moviepilot "${HOME}" /app /public "${CONFIG_DIR}" /var/lib/nginx /var/log/nginx
 chown moviepilot:moviepilot /etc/hosts /tmp
 
-# 浏览器内核
-if [[ "$HTTPS_PROXY" =~ ^https?:// ]] || [[ "$PROXY_HOST" =~ ^https?:// ]]; then
-  HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$PROXY_HOST}}" gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
-else
-  gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
+# 浏览器内核（如果 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 则跳过）
+if [ "${PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD:-0}" != "1" ]; then
+  if [[ "$HTTPS_PROXY" =~ ^https?:// ]] || [[ "$PROXY_HOST" =~ ^https?:// ]]; then
+    HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-$PROXY_HOST}}" gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
+  else
+    gosu moviepilot:moviepilot playwright install ${PLAYWRIGHT_BROWSER_TYPE:-chromium}
+  fi
 fi
 
 source /app/docker/cert.sh

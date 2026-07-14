@@ -7,11 +7,50 @@ import os
 from typing import Optional, List, Dict
 from urllib.parse import urljoin, quote
 
+import time
+import asyncio
+from functools import wraps
+
 from app.log import logger
 from app.utils.http import RequestUtils, AsyncRequestUtils
 
 from .schema import MetatubeMovie, MetatubeSearchResponse, MetatubeMovieDetail, MetatubeDetailResponse
-from .utils.retry import retry_on_failure, retry_on_failure_async
+
+
+def _retry_sync(max_retries=3, delay=1.0, backoff=2.0):
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            current_delay = delay
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt >= max_retries - 1:
+                        raise
+                    logger.warning(f"{func.__name__} 失败，{current_delay:.1f}s后重试 ({attempt+1}/{max_retries}): {e}")
+                    time.sleep(current_delay)
+                    current_delay *= backoff
+        return wrapper
+    return decorator
+
+
+def _retry_async(max_retries=3, delay=1.0, backoff=2.0):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            current_delay = delay
+            for attempt in range(max_retries):
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    if attempt >= max_retries - 1:
+                        raise
+                    logger.warning(f"{func.__name__} 异步失败，{current_delay:.1f}s后重试 ({attempt+1}/{max_retries}): {e}")
+                    await asyncio.sleep(current_delay)
+                    current_delay *= backoff
+        return wrapper
+    return decorator
 
 
 class MetatubeApiClient:
@@ -218,7 +257,7 @@ class MetatubeApiClient:
         end = endpoint.lstrip('/')
         return f"{base}/{end}"
 
-    @retry_on_failure(max_retries=3, delay=1.0, backoff=2.0)
+    @_retry_sync(max_retries=3, delay=1.0, backoff=2.0)
     def search(self, keyword: str, fallback: bool = True) -> Optional[List[MetatubeMovie]]:
         """
         搜索媒体（带自动重试）
@@ -260,7 +299,7 @@ class MetatubeApiClient:
 
         return None
 
-    @retry_on_failure_async(max_retries=3, delay=1.0, backoff=2.0)
+    @_retry_async(max_retries=3, delay=1.0, backoff=2.0)
     async def async_search(self, keyword: str, fallback: bool = True) -> Optional[List[MetatubeMovie]]:
         """
         异步搜索媒体（带自动重试）
@@ -302,7 +341,7 @@ class MetatubeApiClient:
 
         return None
 
-    @retry_on_failure(max_retries=3, delay=1.0, backoff=2.0)
+    @_retry_sync(max_retries=3, delay=1.0, backoff=2.0)
     def get_detail(self, provider: str, movie_id: str) -> Optional[MetatubeMovieDetail]:
         """
         获取电影详情（带自动重试）
@@ -340,7 +379,7 @@ class MetatubeApiClient:
 
         return None
 
-    @retry_on_failure_async(max_retries=3, delay=1.0, backoff=2.0)
+    @_retry_async(max_retries=3, delay=1.0, backoff=2.0)
     async def async_get_detail(self, provider: str, movie_id: str) -> Optional[MetatubeMovieDetail]:
         """
         异步获取电影详情（带自动重试）

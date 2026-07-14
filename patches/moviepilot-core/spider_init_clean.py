@@ -3,7 +3,7 @@ import re
 import traceback
 from typing import Any, Optional
 from typing import List
-from urllib.parse import quote, urlparse, parse_qs
+from urllib.parse import quote, urlencode, urlparse, parse_qs
 
 from fastapi.concurrency import run_in_threadpool
 from jinja2 import Template
@@ -12,28 +12,14 @@ from pyquery import PyQuery
 from app.core.config import settings
 from app.log import logger
 from app.schemas.types import MediaType
-from app.utils import rust_accel
 from app.utils.http import RequestUtils, AsyncRequestUtils
 from app.utils.string import StringUtils
-from app.utils.url import UrlUtils
 
 
 class SiteSpider:
     """
     站点爬虫
     """
-
-    _default_result_num = 100
-
-    # 成人内容分类映射（站点域名关键字 -> 成人 cat ID 列表）
-    _adult_categories = {
-        'ptfans': ['419', '420', '421', '422', '423', '424', '425', '426', '427', '428', '429'],
-        'mteam': ['6010', '6060', '6080', '410', '411', '412', '413', '424', '425', '426', '429', '430', '431', '432', '433', '436', '437', '440'],
-        '1ptba': ['610', '611', '612', '613', '614', '615', '616', '617', '618', '619', '620', '621', '622', '623', '624', '625'],
-        '52pt': ['411'],
-        'ptskit': [],
-        'carpt': [],
-    }
 
     @property
     def __class__(self):
@@ -54,7 +40,7 @@ class SiteSpider:
                  cat: Optional[str] = None,
                  page: Optional[int] = 0,
                  referer: Optional[str] = None,
-                 search_type: Optional[str] = "torrents"):
+                 search_type: Optional[str] = None):
         """
         设置查询参数
         :param indexer: 索引器
@@ -63,39 +49,31 @@ class SiteSpider:
         :param cat: 搜索分类
         :param page: 页码
         :param referer: Referer
+        :param search_type: 搜索类型 normal/adult/all/auto，默认 normal
         """
         if not indexer:
             return
         self.keyword = keyword
         self.cat = cat
         self.mtype = mtype
-        self.search_type = search_type or "torrents"
         self.indexerid = indexer.get('id')
         self.indexername = indexer.get('name')
-        if self.search_type == "subtitles":
-            subtitle_conf = indexer.get('subtitles') or {}
-            self.search = subtitle_conf.get('search')
-            self.batch = subtitle_conf.get('batch')
-            self.browse = subtitle_conf.get('browse')
-            self.category = subtitle_conf.get('category')
-            self.list = subtitle_conf.get('list') or {}
-            self.fields = subtitle_conf.get('fields') or {}
-            result_num = subtitle_conf.get('result_num') or indexer.get('result_num')
-        else:
-            self.search = indexer.get('search')
-            self.batch = indexer.get('batch')
-            self.browse = indexer.get('browse')
-            self.category = indexer.get('category')
-            self.list = (indexer.get('torrents') or {}).get('list', {})
-            self.fields = (indexer.get('torrents') or {}).get('fields') or {}
-            if not keyword and self.browse:
-                self.list = self.browse.get('list') or self.list
-                self.fields = self.browse.get('fields') or self.fields
-            result_num = indexer.get('result_num')
-        self._field_templates = self.__build_field_templates()
+        self.search = indexer.get('search')
+        self.batch = indexer.get('batch')
+        self.browse = indexer.get('browse')
+        self.category = indexer.get('category')
+        self.list = indexer.get('torrents').get('list', {})
+        self.fields = indexer.get('torrents').get('fields')
+        if not keyword and self.browse:
+            self.list = self.browse.get('list') or self.list
+            self.fields = self.browse.get('fields') or self.fields
         self.domain = indexer.get('domain')
-        self.result_num = int(result_num or self.default_result_num())
+        self.result_num = int(indexer.get('result_num') or 100)
         self._timeout = int(indexer.get('timeout') or 15)
+        # DEBUG: print indexer config for 1PTBA/PTFans
+        domain_lower = (self.domain or '').lower()
+        if any(k in domain_lower for k in ['1ptba', 'ptfans']):
+            logger.info(f"[SPIDER_INIT_DEBUG] domain={self.domain} search={self.search} category={self.category}")
         self.page = page
         if self.domain and not str(self.domain).endswith("/"):
             self.domain = self.domain + "/"
@@ -108,26 +86,30 @@ class SiteSpider:
         self.is_error = False
         self.torrents_info = {}
         self.torrents_info_array = []
-
-    def __build_field_templates(self) -> dict:
-        """
-        预编译字段模板，避免按每条种子重复构造 Jinja Template。
-        """
-        templates = {}
-        for name in ("title", "description", "date"):
-            selector = (self.fields or {}).get(name, {})
-            template_text = selector.get("text") if isinstance(selector, dict) else None
-            if not template_text:
-                continue
-            templates[name] = Template(template_text)
-        return templates
-
-    @classmethod
-    def default_result_num(cls) -> int:
-        """
-        获取普通配置站点的默认单页数量。
-        """
-        return cls._default_result_num
+        # 搜索类型：normal/adult/all/auto
+        # 如果 search_type 未传入（None），自动设为 auto 以启用成人关键词检测
+        if not search_type:
+            search_type = 'auto'
+        self.search_type = search_type
+        # 各站点成人 Category 定义（站点原始分类 ID，直接用于 cat{ID}=1 参数）
+        # Key: 站点 domain 小写前缀，Value: 成人分类 ID 列表
+        self._adult_categories = {
+            # ptfans: 步兵/骑兵/三级/H系列 (cat420-429) + XXX(6000) + (cat419)
+            'ptfans': ['6000', '419', '420', '421', '422', '423', '424', '425', '426', '427', '428', '429'],
+            # mteam: 有码HD(410)/无码HD(429)/BluRay有码(431)/BluRay无码(432)
+            #   SD有码(424)/SD无码(430)/DVDiSo有码(437)/DVDiSo无码(426)/0Day(436)
+            #   H-Anime(412)/H-Comic(413)/H-Game(411)/IV寫真影集(425)/IV寫真圖集(433)/AV(Gay)(440)
+            #   + 标准XXX(6000,6010,6060,6080)
+            'mteam': ['6000', '6010', '6060', '6080', '410', '411', '412', '413', '424', '425', '426', '429', '430', '431', '432', '433', '436', '437', '440'],
+            # 1ptba: AV有码/无码/其他 (cat610-625)
+            '1ptba': ['610', '611', '612', '613', '614', '615', '616', '617', '618', '619', '620', '621', '622', '623', '624', '625'],
+            # 52pt: Erotic(411) + XXX(6000)
+            '52pt': ['6000', '411'],
+            # pts (ptskit): XXX(6000)
+            'ptskit': ['6000'],
+            # carpt: XXX(6000)
+            'carpt': ['6000'],
+        }
 
     def __get_search_url(self):
         """
@@ -168,15 +150,14 @@ class SiteSpider:
                 search_word = self.keyword
                 # 查询模式与
                 search_mode = "0"
-            is_imdbid_search = isinstance(self.keyword, str) and re.fullmatch(r"tt\d+", self.keyword)
-            search_word = self.__format_search_word(search_word)
 
             # 搜索URL
             indexer_params = self.search.get("params", {}).copy()
             if indexer_params:
                 search_area = indexer_params.get('search_area')
                 # search_area非0表示支持imdbid搜索
-                if search_area and not is_imdbid_search:
+                if (search_area and
+                        (not self.keyword or not self.keyword.startswith('tt'))):
                     # 支持imdbid搜索，但关键字不是imdbid时，不启用imdbid搜索
                     indexer_params.pop('search_area')
                 # 变量字典
@@ -218,31 +199,38 @@ class SiteSpider:
                                 "cat%s" % cat.get("id"): 1
                             })
 
-                # Adult category injection for PT sites
-                # For adult-configured sites: REPLACE normal cats with adult-only cats
-                # (adding both causes the site to prefer normal results over adult)
-                domain_lower = (self.domain or '').lower()
-                _site_adult_key = None
-                for key in self._adult_categories:
-                    if key in domain_lower:
-                        _site_adult_key = key
-                        break
-                if _site_adult_key:
-                    adult_cats = self._adult_categories[_site_adult_key]
-                    if adult_cats:
-                        # Remove all normal cat params, replace with adult-only
-                        keys_to_remove = [k for k in params if k.startswith('cat') and k != 'cat']
-                        for k in keys_to_remove:
-                            del params[k]
+                logger.info(f"[ADULT_TRACE] search_type={self.search_type!r} search_word={search_word!r} domain={self.domain}")
+                # 成人内容 Category 注入（参照 Jackett Category 过滤方式）
+                # search_type: adult=仅成人, all=普通+成人, auto=自动识别关键词
+                _do_adult = self.search_type in ("adult", "all")
+                # 自动识别：检测是否为成人内容关键词
+                if self.search_type == 'auto' and search_word:
+                    _do_adult = self._is_adult_keyword(search_word)
+
+                logger.info(f"[ADULT_TRACE2] _do_adult={_do_adult} is_adult={self._is_adult_keyword(search_word) if search_word else "NO_WORD"}")
+                if _do_adult:
+                    # 根据站点 domain 匹配成人 Category
+                    site_key = None
+                    domain_lower = self.domain.lower() if self.domain else ''
+                    for key in self._adult_categories:
+                        if key in domain_lower:
+                            site_key = key
+                            break
+
+                    if site_key:
+                        adult_cats = self._adult_categories[site_key]
+                        cat_field = self.category.get("field") if self.category else None
+
+                        # 强制使用 cat{ID}=1 格式（1PTBA/PTFans 等站点不支持合并分类格式）
+                        # 之前的 cat_field 合并逻辑会导致 cat=401 610 611... 格式
+                        # 而这些站点只接受 cat610=1&cat611=1... 格式
                         for cat_id in adult_cats:
-                            params['cat' + cat_id] = 1
-                        logger.info('[ADULT_INJECT] %s search %s cats=%s' % (self.domain, _site_adult_key, adult_cats))
-                    # TUN mode: bypass explicit proxy for adult sites
-                    self.proxies = None
-                    self.proxy_server = None
+                            params[f"cat{cat_id}"] = 1
 
-
-                searchurl = UrlUtils.combine_url(self.domain, torrentspath, params)
+                # DEBUG: print adult injection details for 1PTBA/PTFans
+                if _do_adult and site_key:
+                    logger.info(f"[ADULT_DEBUG] domain={self.domain} site_key={site_key} adult_cats={adult_cats} cat_field={cat_field} final_params={dict(params)}")
+                searchurl = self.domain + torrentspath + "?" + urlencode(params)
             else:
                 # 变量字典
                 inputs_dict = {
@@ -272,63 +260,13 @@ class SiteSpider:
             # 搜索Url
             searchurl = self.domain + str(torrentspath).format(**inputs_dict)
 
-            # [BROWSE] Adult category injection for browse/list mode
-            # Browse mode has no keyword, so the search branch's injection won't fire.
-            # Manually inject adult cat params for configured sites.
-            domain_lower = (self.domain or '').lower()
-            _site_adult_key = None
-            for key in self._adult_categories:
-                if key in domain_lower:
-                    _site_adult_key = key
-                    break
-            if _site_adult_key:
-                adult_cats = self._adult_categories[_site_adult_key]
-                if adult_cats:
-                    cat_params = "&".join(f"cat{cid}=1" for cid in adult_cats)
-                    if "?" in searchurl:
-                        searchurl += "&" + cat_params
-                    else:
-                        searchurl += "?" + cat_params
-                    logger.info('[ADULT_INJECT] %s browse %s cats=%s' % (self.domain, _site_adult_key, adult_cats))
-                # TUN mode: bypass explicit proxy for adult sites
-                self.proxies = None
-                self.proxy_server = None
-
-        # Fix: PTFans/1PTBA use different endpoints for keyword search (not torrents.php)
-        # torrents.php only supports browse (no keyword); keyword search needs search.php/special.php
-        _domain = (self.domain or '').lower()
-        if 'ptfans.cc' in _domain:
-            searchurl = searchurl.replace('torrents.php', 'search.php', 1)
-            logger.info(f'[SEARCH_URL_FIX] {self.domain}: torrents.php -> search.php')
-        elif '1ptba.com' in _domain:
-            searchurl = searchurl.replace('torrents.php', 'special.php', 1)
-            logger.info(f'[SEARCH_URL_FIX] {self.domain}: torrents.php -> special.php')
-
         return searchurl
-
-    def __format_search_word(self, search_word: str) -> str:
-        """
-        按站点配置转换搜索关键字，用于兼容站点特殊的 IMDb ID 查询格式。
-        """
-        if not search_word or not isinstance(search_word, str):
-            return search_word
-        if re.fullmatch(r"tt\d+", search_word):
-            imdbid_format = self.search.get("imdbid_format")
-            if imdbid_format:
-                return str(imdbid_format).format(
-                    keyword=search_word,
-                    imdbid=search_word,
-                    imdbid_num=search_word[2:]
-                )
-        return search_word
 
     def get_torrents(self) -> List[dict]:
         """
         开始请求
         """
-        if not self.search:
-            return []
-        if not self.domain:
+        if not self.search or not self.domain:
             return []
 
         # 获取搜索URL
@@ -353,13 +291,98 @@ class SiteSpider:
             )
         )
 
+    @staticmethod
+    def _is_adult_keyword(keyword: str) -> bool:
+        """
+        自动识别关键词是否为成人内容
+        参照 Jackett 的自动识别逻辑
+        """
+        if not keyword:
+            return False
+        keyword_upper = keyword.upper()
+        # JAV 常见番号前缀
+        jav_prefixes = [
+            'SSIS', 'SSNI', 'SNIS', 'HYSD', 'JUFD', 'IPX', 'EBOD', 'MIDE', 'MEYD',
+            'ABP', 'ADN', 'ADV', 'AEON', 'AMBS', 'AMSO', 'ANNI', 'ARSO', 'ATID',
+            'AXD', 'AYR', 'BAZX', 'BBAC', 'BCR', 'BDAV', 'BDMJ', 'BF', 'BGJ',
+            'BIJN', 'BKD', 'BLK', 'BMDB', 'BMW', 'BOOT', 'BP', 'BPS', 'BT',
+            'BTP', 'BU', 'BURO', 'C-', 'CA', 'CC', 'CE', 'CL', 'CM', 'COW',
+            'CWP', 'CZ', 'D-', 'DA', 'DANDY', 'DC', 'DCO', 'DD', 'DK', 'DKM',
+            'DOC', 'DRC', 'DRS', 'DT', 'E-', 'EC', 'EDE', 'EMU', 'EN', 'ES',
+            'ET', 'EW', 'EX', 'F-', 'FC2', 'FCD', 'FIR', 'FJ', 'FLA', 'FS',
+            'FTN', 'FX', 'G-', 'GA', 'GED', 'GEKI', 'GH', 'GIG', 'GK', 'GM',
+            'GOP', 'GQ', 'GTJ', 'GUG', 'GVH', 'H-', 'HDMV', 'HND', 'HPM',
+            'HPP', 'HQ', 'HR', 'HV', 'HW', 'HYP', 'HZU', 'I-', 'ICM', 'ID',
+            'IE', 'IENE', 'IMG', 'IN', 'IQ', 'ITS', 'J-', 'JB', 'JB7', 'JFB',
+            'JG', 'JJ', 'JK', 'JM', 'JMD', 'JOD', 'JP', 'JPD', 'JU', 'K-',
+            'KA', 'KAZ', 'KBI', 'KD', 'KG', 'KI', 'KID', 'KIM', 'KM', 'KND',
+            'KN', 'KOK', 'KR', 'KS', 'KT', 'KUL', 'KYM', 'LA', 'LADY', 'LAP',
+            'LAV', 'LCS', 'LDA', 'LFA', 'LIE', 'LIP', 'LK', 'LMV', 'LOL',
+            'LQ', 'LS', 'LV', 'M-', 'M1V', 'MAD', 'MAZ', 'MBA', 'MD', 'MDC',
+            'ME', 'MEK', 'MF', 'MFC', 'MGD', 'MGM', 'MH', 'MIA', 'MID', 'MIM',
+            'MIX', 'MJ', 'MKD', 'MLD', 'MMB', 'MMV', 'MN', 'MO', 'MOG', 'MR',
+            'MRS', 'MS', 'MSFH', 'MST', 'MT', 'MUK', 'MUR', 'MUS', 'MV', 'MVA',
+            'MX', 'MY', 'MZ', 'N-', 'NAC', 'NAS', 'NAT', 'NB', 'NBD', 'ND',
+            'NDS', 'NE', 'NFB', 'NHD', 'NHS', 'NIK', 'NMS', 'NP', 'NQ', 'NR',
+            'NS', 'NSE', 'NT', 'NTT', 'NV', 'O-', 'OD', 'ONF', 'ONE', 'OR',
+            'OV', 'P-', 'PBD', 'PCD', 'PD', 'PE', 'PG', 'PH', 'PID', 'PK',
+            'PL', 'PLF', 'PPV', 'PR', 'PT', 'PTS', 'PU', 'PZ', 'Q-', 'QAF',
+            'QL', 'R-', 'R18', 'RAC', 'RAG', 'RAY', 'RB', 'RBD', 'RCT', 'RE',
+            'RED', 'REQ', 'REV', 'RHD', 'RHJ', 'RHS', 'RHV', 'RID', 'RIK',
+            'RMD', 'RMS', 'RN', 'ROE', 'ROS', 'RP', 'RQ', 'RS', 'RTH', 'S-',
+            'S1', 'SABA', 'SAD', 'SAK', 'SAM', 'SAN', 'SAR', 'SAS', 'SAT',
+            'SAV', 'SCR', 'SD', 'SDA', 'SDE', 'SDFS', 'SH', 'SHIN', 'SHK',
+            'SHL', 'SHP', 'SHT', 'SIER', 'SIF', 'SIS', 'SL', 'SLG', 'SLP',
+            'SM', 'SMA', 'SMD', 'SN', 'SNI', 'SOE', 'SOG', 'SOP', 'SOR',
+            'SP', 'SQ', 'SR', 'SS', 'SSA', 'SSAN', 'ST', 'STAR', 'STD', 'SVS',
+            'SW', 'SX', 'SY', 'T-', 'TA', 'TAB', 'TAF', 'TAK', 'TAM', 'TBL',
+            'TC', 'TCA', 'TF', 'TG', 'TH', 'TIG', 'TK', 'TL', 'TM', 'TN',
+            'TOD', 'TOKYO', 'TOP', 'TOR', 'TR', 'TRAP', 'TS', 'TSU', 'TT',
+            'TTJ', 'TYC', 'TZ', 'U-', 'UD', 'UH', 'UK', 'ULT', 'UM', 'UMD',
+            'UR', 'USA', 'USB', 'USH', 'UT', 'UU', 'UVER', 'V-', 'VAG', 'VD',
+            'VEN', 'VG', 'VI', 'VIDI', 'VIV', 'VK', 'VL', 'VLP', 'VS', 'VSP',
+            'VT', 'W-', 'WF', 'WI', 'WK', 'WKI', 'WN', 'WO', 'WP', 'WR', 'WSD',
+            'WT', 'X-', 'XA', 'XR', 'XX', 'XXX', 'Y-', 'YG', 'YM', 'YP', 'YUJ',
+            'Z-', 'ZEX', 'ZIP', 'ZM', 'ZUK', 'ZUKE', 'ZV', 'ZY', 'ZZ',
+            # 韩国/欧美
+            'KATU', 'KS', 'ABS', 'SVDVD', 'DAP', 'SKY', 'HUN', 'FST', 'GS',
+            'GOD', 'SGA', 'MGD', 'HND', 'OKY', 'NIT', 'KIR', 'MCC', 'MVO',
+            'JEX', 'POT', 'AMO', 'SHI', 'TKI', 'SU', 'HAP', 'SAB', 'KTB',
+            'WSS', 'KSM', 'YRT', 'SED', 'MGT', 'TSP', 'JML', 'SHG', 'HAD',
+            'WIF', 'WEE', 'VOP', 'HNV', 'DCO', 'KTL', 'NEX', 'PMP', 'LUX',
+            # 知名演员名
+            'JULIA', 'MIU', 'SAORI', 'YUI', 'AI', 'KAORI', 'MIO', 'YUMA',
+            'ERINA', 'HINATA', 'MOMO', 'AKARI', 'TSUBAKI', 'YUNA', 'AYU',
+            'MEL', 'NAO', 'REI', 'MAO', 'YURI', 'SORA', 'HONOKA', 'HANAKO',
+            # 特殊系列
+            'HEYZO', '10MUSUME', 'CARIB', 'GF', 'PACO', '10musume', 'heyzo',
+            # 无码系列
+            'FC2', 'SR', 'SV', 'AD', 'BGM', 'RBD',
+            # 同人
+            'DL', 'TG',
+        ]
+        for prefix in jav_prefixes:
+            if keyword_upper.startswith(prefix):
+                return True
+            # 处理带连字符的番号如 FC2-PPV-1234567
+            if f"{prefix}-" in keyword_upper:
+                return True
+        # 纯数字ID（如 N12345 欧美格式）
+        if len(keyword.strip()) < 10 and keyword.strip().isupper():
+            return False
+        # 中文字符串中含成人关键词
+        adult_cn = ['无码', '有码', '步兵', '骑兵', '中文字幕', '成人', '色情', 'AV', '加勒比',
+                     '一本道', '东京热', '热码', '无修', '素人', '流出', '盗摄', '偷拍']
+        for kw in adult_cn:
+            if kw in keyword:
+                return True
+        return False
+
     async def async_get_torrents(self) -> List[dict]:
         """
         异步请求
         """
-        if not self.search:
-            return []
-        if not self.domain:
+        if not self.search or not self.domain:
             return []
 
         # 获取搜索URL
@@ -402,8 +425,7 @@ class SiteSpider:
                 title_optional_selector = self.fields.get('title_optional', {})
                 title_optional = self._safe_query(torrent, title_optional_selector)
                 render_dict.update({'title_optional': title_optional})
-            template = self._field_templates.get("title") or Template(selector.get("text"))
-            self.torrents_info['title'] = template.render(fields=render_dict)
+            self.torrents_info['title'] = Template(selector.get('text')).render(fields=render_dict)
         self.torrents_info['title'] = self.__filter_text(self.torrents_info.get('title'),
                                                          selector.get('filters'))
 
@@ -436,8 +458,7 @@ class SiteSpider:
                 description_normal_selector = self.fields.get("description_normal", {})
                 description_normal = self._safe_query(torrent, description_normal_selector)
                 render_dict.update({"description_normal": description_normal})
-            template = self._field_templates.get("description") or Template(selector.get("text"))
-            self.torrents_info['description'] = template.render(fields=render_dict)
+            self.torrents_info['description'] = Template(selector.get('text')).render(fields=render_dict)
         self.torrents_info['description'] = self.__filter_text(self.torrents_info.get('description'),
                                                                selector.get('filters'))
 
@@ -483,30 +504,6 @@ class SiteSpider:
             else:
                 self.torrents_info['enclosure'] = download_link
 
-    def __get_report_url(self, torrent: Any):
-        """
-        获取字幕举报页面链接。
-        """
-        if 'report' not in self.fields:
-            return
-        selector = self.fields.get('report', {})
-        item = self._safe_query(torrent, selector)
-        report_link = self.__filter_text(item, selector.get('filters'))
-        if report_link:
-            self.torrents_info['report_url'] = self.__normalize_link(report_link)
-
-    def __get_language_icon(self, torrent: Any):
-        """
-        获取字幕语言图标链接。
-        """
-        if 'language_icon' not in self.fields:
-            return
-        selector = self.fields.get('language_icon', {})
-        item = self._safe_query(torrent, selector)
-        icon_link = self.__filter_text(item, selector.get('filters'))
-        if icon_link:
-            self.torrents_info['language_icon'] = self.__normalize_link(icon_link)
-
     def __get_imdbid(self, torrent: Any):
         # imdbid
         if "imdbid" not in self.fields:
@@ -521,7 +518,7 @@ class SiteSpider:
             return
         selector = self.fields.get('size', {})
         item = self._safe_query(torrent, selector)
-        if item is not None and item != "":
+        if item:
             size_val = item.replace("\n", "").strip()
             size_val = self.__filter_text(size_val,
                                           selector.get('filters'))
@@ -563,7 +560,7 @@ class SiteSpider:
             return
         selector = self.fields.get('grabs', {})
         item = self._safe_query(torrent, selector)
-        if item is not None and item != "":
+        if item:
             grabs_val = item.split("/")[0]
             grabs_val = grabs_val.replace(",", "")
             grabs_val = self.__filter_text(grabs_val, selector.get('filters'))
@@ -573,107 +570,19 @@ class SiteSpider:
 
     def __get_pubdate(self, torrent: Any):
         # torrent pubdate yyyy-mm-dd hh:mm:ss
-        if 'date_added' not in self.fields and 'date' not in self.fields:
+        if 'date_added' not in self.fields:
             return
         selector = self.fields.get('date_added', {})
         pubdate_str = self._safe_query(torrent, selector)
-        if not pubdate_str:
-            selector = self.fields.get('date', {})
-            pubdate_str = self.__get_date(torrent, selector)
         if pubdate_str:
             pubdate_str = pubdate_str.replace('\n', ' ').strip()
         self.torrents_info['pubdate'] = self.__filter_text(pubdate_str, selector.get('filters'))
         if self.torrents_info.get('pubdate'):
             try:
-                if isinstance(self.torrents_info['pubdate'], datetime.datetime):
-                    self.torrents_info['pubdate'] = self.torrents_info['pubdate'].strftime('%Y-%m-%d %H:%M:%S')
-                else:
+                if not isinstance(self.torrents_info['pubdate'], datetime.datetime):
                     datetime.datetime.strptime(str(self.torrents_info['pubdate']), '%Y-%m-%d %H:%M:%S')
             except (ValueError, TypeError):
                 self.torrents_info['pubdate'] = StringUtils.unify_datetime_str(str(self.torrents_info['pubdate']))
-            if self.__is_invalid_pubdate_text(self.torrents_info.get('pubdate')):
-                self.torrents_info.pop('pubdate', None)
-
-    def __get_date(self, torrent: Any, selector: dict) -> Optional[str]:
-        """
-        从 date 模板解析发布时间。
-        """
-        if not selector:
-            return None
-        if "selector" in selector:
-            return self._safe_query(torrent, selector)
-        template_text = selector.get("text")
-        if not template_text:
-            return None
-
-        render_dict = {}
-        for field_name in ("date_elapsed", "date_added"):
-            field_selector = self.fields.get(field_name, {})
-            field_value = self._safe_query(torrent, field_selector)
-            if not field_value:
-                field_value = self.__get_date_from_cell(torrent, field_selector)
-            render_dict[field_name] = field_value
-        if not any(render_dict.values()):
-            return None
-
-        template = self._field_templates.get("date") or Template(template_text)
-        pubdate_str = template.render(fields=render_dict)
-        if pubdate_str == "now" or self.__is_relative_pubdate_text(pubdate_str):
-            return None
-        return pubdate_str
-
-    def __get_date_from_cell(self, torrent: Any, selector: dict) -> Optional[str]:
-        """
-        兼容 NexusPHP 发生时间模式下不再渲染 span 的时间单元格。
-        """
-        cell_selector = self.__date_cell_selector(selector.get("selector"))
-        if not cell_selector:
-            return None
-        return self._safe_query(torrent, {"selector": cell_selector})
-
-    @staticmethod
-    def __date_cell_selector(selector: Optional[str]) -> Optional[str]:
-        """
-        从时间字段选择器推导父级 td 选择器。
-        """
-        if not selector:
-            return None
-        selector = selector.strip()
-        if not selector or "> span" not in selector:
-            return None
-        return selector.split("> span", 1)[0].strip()
-
-    @staticmethod
-    def __is_relative_pubdate_text(pubdate: Optional[str]) -> bool:
-        """
-        判断是否为相对时间，避免写入不可排序的发布时间。
-        """
-        if not pubdate:
-            return False
-        text = str(pubdate).strip().lower()
-        if re.search(r"\d{4}[-/年]\d{1,2}", text):
-            return False
-        if "ago" in text:
-            return True
-        return bool(re.search(r"\d+\s*(秒|分钟|分|小时|天|周|月|年)", text))
-
-    @classmethod
-    def __is_invalid_pubdate_text(cls, pubdate: Optional[str]) -> bool:
-        """
-        判断是否为不可用发布时间，避免列错位文本污染 pubdate。
-        """
-        if not pubdate:
-            return True
-        text = str(pubdate).strip()
-        if text.lower() == "now" or text == "0":
-            return True
-        if cls.__is_relative_pubdate_text(text):
-            return True
-        try:
-            datetime.datetime.strptime(text, '%Y-%m-%d %H:%M:%S')
-            return False
-        except (ValueError, TypeError):
-            return True
 
     def __get_date_elapsed(self, torrent: Any):
         # torrent date elapsed text
@@ -796,52 +705,6 @@ class SiteSpider:
         else:
             self.torrents_info['category'] = MediaType.UNKNOWN.value
 
-    def __get_subtitle_field(self, torrent: Any, field_name: str):
-        """
-        按配置读取字幕字段。
-        """
-        selector = self.fields.get(field_name, {})
-        if not selector:
-            return
-        item = self._safe_query(torrent, selector)
-        value = self.__filter_text(item, selector.get('filters'))
-        if value is not None:
-            self.torrents_info[field_name] = value
-
-    def __fill_subtitle_ids(self):
-        """
-        从字幕下载链接中补充站点种子ID和字幕ID。
-        """
-        enclosure = self.torrents_info.get("enclosure")
-        if not enclosure:
-            return
-        query_params = parse_qs(urlparse(enclosure).query)
-        if not self.torrents_info.get("torrent_id"):
-            torrent_id = query_params.get("torrentid") or query_params.get("torrent_id")
-            if torrent_id:
-                self.torrents_info["torrent_id"] = torrent_id[0]
-        if not self.torrents_info.get("subtitle_id"):
-            subtitle_id = query_params.get("subid") or query_params.get("subtitle")
-            if subtitle_id:
-                self.torrents_info["subtitle_id"] = subtitle_id[0]
-
-    def __normalize_link(self, link: Optional[str]) -> Optional[str]:
-        """
-        将站点相对链接转换为绝对链接。
-        """
-        if not link:
-            return None
-        parsed_link = urlparse(link)
-        if parsed_link.scheme:
-            return link
-        if not link.startswith("http"):
-            if link.startswith("//"):
-                return self.domain.split(":")[0] + ":" + link
-            if link.startswith("/"):
-                return self.domain + link[1:]
-            return self.domain + link
-        return link
-
     def _safe_query(self, torrent: Any, selector_config: Optional[dict]) -> Optional[str]:
         """
         安全地执行PyQuery查询并自动清理资源
@@ -852,17 +715,13 @@ class SiteSpider:
         if not selector_config or not selector_config.get('selector'):
             return None
 
-        should_clone = bool(selector_config.get("remove"))
-        query_obj = torrent(selector_config.get('selector', ''))
-        if should_clone:
-            query_obj = query_obj.clone()
+        query_obj = torrent(selector_config.get('selector', '')).clone()
         try:
             self.__remove(query_obj, selector_config)
             items = self.__attribute_or_text(query_obj, selector_config)
             return self.__index(items, selector_config)
         finally:
-            if should_clone:
-                query_obj.clear()
+            query_obj.clear()
             del query_obj
 
     def get_info(self, torrent: Any) -> dict:
@@ -914,36 +773,6 @@ class SiteSpider:
         finally:
             self.torrents_info.clear()
 
-    def get_subtitle_info(self, subtitle: Any) -> dict:
-        """
-        解析单条字幕数据。
-        """
-        self.torrents_info = {}
-        try:
-            self.__get_title(subtitle)
-            self.__get_description(subtitle)
-            self.__get_detail(subtitle)
-            self.__get_download(subtitle)
-            self.__get_size(subtitle)
-            self.__get_pubdate(subtitle)
-            self.__get_date_elapsed(subtitle)
-            self.__get_grabs(subtitle)
-            self.__get_language_icon(subtitle)
-            self.__get_report_url(subtitle)
-            for field_name in (
-                    "language", "uploader", "torrent_id", "subtitle_id", "file_name"
-            ):
-                self.__get_subtitle_field(subtitle, field_name)
-            self.__fill_subtitle_ids()
-            if not self.torrents_info.get("title") or not self.torrents_info.get("enclosure"):
-                return {}
-            return self.torrents_info.copy() if self.torrents_info else {}
-        except Exception as err:
-            logger.error("%s 字幕搜索出现错误：%s" % (self.indexername, str(err)))
-            return {}
-        finally:
-            self.torrents_info.clear()
-
     @staticmethod
     def __filter_text(text: Optional[str], filters: Optional[List[dict]]) -> str:
         """
@@ -981,7 +810,7 @@ class SiteSpider:
                     text = param_value[0] if param_value else ''
             except Exception as err:
                 logger.debug(f'过滤器 {method_name} 处理失败：{str(err)} - {traceback.format_exc()}')
-        return text.strip() if isinstance(text, str) else text
+        return text.strip()
 
     @staticmethod
     def __remove(item: Any, selector: Optional[dict]):
@@ -995,9 +824,6 @@ class SiteSpider:
 
     @staticmethod
     def __attribute_or_text(item: Any, selector: Optional[dict]) -> list:
-        """
-        获取查询结果的属性或文本列表。
-        """
         if not selector:
             return item
         if not item:
@@ -1010,9 +836,6 @@ class SiteSpider:
 
     @staticmethod
     def __index(items: Optional[list], selector: Optional[dict]) -> Optional[str]:
-        """
-        按配置下标读取查询结果。
-        """
         if not items:
             return None
         if selector:
@@ -1028,67 +851,13 @@ class SiteSpider:
             item = items[0]
         return item
 
-    @staticmethod
-    def __is_login_or_permission_page(html_doc: Any) -> bool:
-        """
-        判断返回内容是否是登录或权限提示页。
-        """
-        title = (html_doc("title").text() or "").strip()
-        page_text = " ".join((html_doc.text() or "").split())[:1000]
-        if title == "登录" or ":: 登录" in title:
-            return True
-        return any(
-            marker in page_text
-            for marker in (
-                "未登录",
-                "登录 / 注册",
-                "必须在登录后才能访问",
-                "你需要启用cookies才能登录",
-            )
-        )
-
     def parse(self, html_text: str) -> List[dict]:
         """
         解析整个页面
         """
-        try:
-            status_doc = PyQuery(html_text)
-            if self.__is_login_or_permission_page(status_doc):
-                self.is_error = True
-                logger.warn(f"错误：{self.indexername} 返回登录或权限提示页")
-                return []
-        except Exception as err:
+        if not html_text:
             self.is_error = True
-            logger.warn(f"错误：{self.indexername} {str(err)}")
             return []
-        finally:
-            if 'status_doc' in locals():
-                status_doc.clear()  # noqa
-                del status_doc
-
-        if self.search_type == "subtitles":
-            rust_subtitles = rust_accel.parse_indexer_subtitles(
-                html_text=html_text,
-                domain=self.domain,
-                list_config=self.list,
-                fields=self.fields,
-                result_num=self.result_num
-            )
-            if rust_subtitles is not None:
-                return rust_subtitles
-        else:
-            rust_torrents = rust_accel.parse_indexer_torrents(
-                html_text=html_text,
-                domain=self.domain,
-                list_config=self.list,
-                fields=self.fields,
-                category=self.category,
-                result_num=self.result_num
-            )
-            if rust_torrents is not None:
-                if len(rust_torrents) > 0:
-                    return rust_torrents
-                # Rust returned empty list, fall through to Python CSS parser
 
         # 清空旧结果
         self.torrents_info_array = []
@@ -1098,19 +867,15 @@ class SiteSpider:
             html_doc = PyQuery(html_text)
             # 种子筛选器
             torrents_selector = self.list.get('selector', '')
-            rows = html_doc(torrents_selector)
             # 遍历种子html列表
-            for i, torn in enumerate(rows):
+            for i, torn in enumerate(html_doc(torrents_selector)):
                 if i >= int(self.result_num):
                     break
                 # 创建临时PyQuery对象进行解析
                 torrent_query = PyQuery(torn)
                 try:
                     # 直接获取种子信息，避免深拷贝
-                    if self.search_type == "subtitles":
-                        torrent_info = self.get_subtitle_info(torrent_query)
-                    else:
-                        torrent_info = self.get_info(torrent_query)
+                    torrent_info = self.get_info(torrent_query)
                     if torrent_info:
                         # 浅拷贝即可，减少内存使用
                         self.torrents_info_array.append(torrent_info)

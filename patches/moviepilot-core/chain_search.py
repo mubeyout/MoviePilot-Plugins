@@ -137,7 +137,7 @@ class SearchChain(ChainBase):
 
     def search_by_title(self, title: str, page: Optional[int] = 0,
                         sites: List[int] = None, cache_local: Optional[bool] = False,
-                        search_type: Optional[str] = None) -> List[Context]:
+                        search_type: Optional[str] = 'auto') -> List[Context]:
         """
         根据标题搜索资源，不识别不过滤，直接返回站点内容
         :param title: 标题，为空时返回所有站点首页内容
@@ -254,7 +254,7 @@ class SearchChain(ChainBase):
 
     async def async_search_by_title_stream(self, title: str, page: Optional[int] = 0,
                                            sites: List[int] = None,
-                                           search_type: Optional[str] = None,
+                                           search_type: Optional[str] = 'auto',
                                            cache_local: Optional[bool] = False) -> AsyncIterator[dict]:
         """
         根据标题渐进式搜索资源，不识别不过滤，按站点完成顺序返回结果
@@ -784,7 +784,7 @@ class SearchChain(ChainBase):
                            sites: List[int] = None,
                            page: Optional[int] = 0,
                            area: Optional[str] = "title",
-                           search_type: Optional[str] = None) -> Optional[List[TorrentInfo]]:
+                           search_type: Optional[str] = 'auto') -> Optional[List[TorrentInfo]]:
         """
         多线程搜索多个站点
         :param mediainfo:  识别的媒体信息
@@ -873,7 +873,7 @@ class SearchChain(ChainBase):
                                        sites: List[int] = None,
                                        page: Optional[int] = 0,
                                        area: Optional[str] = "title",
-                                       search_type: Optional[str] = None) -> Optional[List[TorrentInfo]]:
+                                       search_type: Optional[str] = 'auto') -> Optional[List[TorrentInfo]]:
         """
         异步搜索多个站点
         :param mediainfo:  识别的媒体信息
@@ -965,7 +965,7 @@ class SearchChain(ChainBase):
                                               sites: List[int] = None,
                                               page: Optional[int] = 0,
                                               area: Optional[str] = "title",
-                                              search_type: Optional[str] = None) -> AsyncIterator[Dict[str, Any]]:
+                                              search_type: Optional[str] = 'auto') -> AsyncIterator[Dict[str, Any]]:
         """
         异步搜索多个站点，按站点完成顺序渐进式返回结果
         :param mediainfo:  识别的媒体信息

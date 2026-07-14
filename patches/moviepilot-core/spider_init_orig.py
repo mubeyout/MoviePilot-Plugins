@@ -25,16 +25,6 @@ class SiteSpider:
 
     _default_result_num = 100
 
-    # 成人内容分类映射（站点域名关键字 -> 成人 cat ID 列表）
-    _adult_categories = {
-        'ptfans': ['419', '420', '421', '422', '423', '424', '425', '426', '427', '428', '429'],
-        'mteam': ['6010', '6060', '6080', '410', '411', '412', '413', '424', '425', '426', '429', '430', '431', '432', '433', '436', '437', '440'],
-        '1ptba': ['610', '611', '612', '613', '614', '615', '616', '617', '618', '619', '620', '621', '622', '623', '624', '625'],
-        '52pt': ['411'],
-        'ptskit': [],
-        'carpt': [],
-    }
-
     @property
     def __class__(self):
         return object
@@ -203,7 +193,7 @@ class SiteSpider:
                         cats = self.category.get("movie") or []
                     else:
                         cats = (self.category.get("movie") or []) + (self.category.get("tv") or [])
-                    allowed_cats = set(self.cat.split(',')) if self.cat and self.cat.strip() else None
+                    allowed_cats = set(self.cat.split(',')) if self.cat else None
                     for cat in cats:
                         if allowed_cats and str(cat.get('id')) not in allowed_cats:
                             continue
@@ -217,31 +207,6 @@ class SiteSpider:
                             params.update({
                                 "cat%s" % cat.get("id"): 1
                             })
-
-                # Adult category injection for PT sites
-                # For adult-configured sites: REPLACE normal cats with adult-only cats
-                # (adding both causes the site to prefer normal results over adult)
-                domain_lower = (self.domain or '').lower()
-                _site_adult_key = None
-                for key in self._adult_categories:
-                    if key in domain_lower:
-                        _site_adult_key = key
-                        break
-                if _site_adult_key:
-                    adult_cats = self._adult_categories[_site_adult_key]
-                    if adult_cats:
-                        # Remove all normal cat params, replace with adult-only
-                        keys_to_remove = [k for k in params if k.startswith('cat') and k != 'cat']
-                        for k in keys_to_remove:
-                            del params[k]
-                        for cat_id in adult_cats:
-                            params['cat' + cat_id] = 1
-                        logger.info('[ADULT_INJECT] %s search %s cats=%s' % (self.domain, _site_adult_key, adult_cats))
-                    # TUN mode: bypass explicit proxy for adult sites
-                    self.proxies = None
-                    self.proxy_server = None
-
-
                 searchurl = UrlUtils.combine_url(self.domain, torrentspath, params)
             else:
                 # 变量字典
@@ -272,38 +237,6 @@ class SiteSpider:
             # 搜索Url
             searchurl = self.domain + str(torrentspath).format(**inputs_dict)
 
-            # [BROWSE] Adult category injection for browse/list mode
-            # Browse mode has no keyword, so the search branch's injection won't fire.
-            # Manually inject adult cat params for configured sites.
-            domain_lower = (self.domain or '').lower()
-            _site_adult_key = None
-            for key in self._adult_categories:
-                if key in domain_lower:
-                    _site_adult_key = key
-                    break
-            if _site_adult_key:
-                adult_cats = self._adult_categories[_site_adult_key]
-                if adult_cats:
-                    cat_params = "&".join(f"cat{cid}=1" for cid in adult_cats)
-                    if "?" in searchurl:
-                        searchurl += "&" + cat_params
-                    else:
-                        searchurl += "?" + cat_params
-                    logger.info('[ADULT_INJECT] %s browse %s cats=%s' % (self.domain, _site_adult_key, adult_cats))
-                # TUN mode: bypass explicit proxy for adult sites
-                self.proxies = None
-                self.proxy_server = None
-
-        # Fix: PTFans/1PTBA use different endpoints for keyword search (not torrents.php)
-        # torrents.php only supports browse (no keyword); keyword search needs search.php/special.php
-        _domain = (self.domain or '').lower()
-        if 'ptfans.cc' in _domain:
-            searchurl = searchurl.replace('torrents.php', 'search.php', 1)
-            logger.info(f'[SEARCH_URL_FIX] {self.domain}: torrents.php -> search.php')
-        elif '1ptba.com' in _domain:
-            searchurl = searchurl.replace('torrents.php', 'special.php', 1)
-            logger.info(f'[SEARCH_URL_FIX] {self.domain}: torrents.php -> special.php')
-
         return searchurl
 
     def __format_search_word(self, search_word: str) -> str:
@@ -326,9 +259,7 @@ class SiteSpider:
         """
         开始请求
         """
-        if not self.search:
-            return []
-        if not self.domain:
+        if not self.search or not self.domain:
             return []
 
         # 获取搜索URL
@@ -357,9 +288,7 @@ class SiteSpider:
         """
         异步请求
         """
-        if not self.search:
-            return []
-        if not self.domain:
+        if not self.search or not self.domain:
             return []
 
         # 获取搜索URL
@@ -1051,6 +980,10 @@ class SiteSpider:
         """
         解析整个页面
         """
+        if not html_text:
+            self.is_error = True
+            return []
+
         try:
             status_doc = PyQuery(html_text)
             if self.__is_login_or_permission_page(status_doc):
@@ -1086,9 +1019,7 @@ class SiteSpider:
                 result_num=self.result_num
             )
             if rust_torrents is not None:
-                if len(rust_torrents) > 0:
-                    return rust_torrents
-                # Rust returned empty list, fall through to Python CSS parser
+                return rust_torrents
 
         # 清空旧结果
         self.torrents_info_array = []

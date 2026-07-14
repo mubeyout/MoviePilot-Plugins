@@ -416,7 +416,8 @@ class IndexerModule(_ModuleBase):
         :param page:  页码
         :reutrn: 种子资源列表
         """
-        return self.search_torrents(site=site, keyword=keyword, cat=cat, page=page)
+        return self.search_torrents(site=site, keyword=keyword, cat=cat, page=page,
+                                        search_type='auto')
 
     async def async_refresh_torrents(self, site: dict,
                                      keyword: Optional[str] = None,
@@ -430,7 +431,8 @@ class IndexerModule(_ModuleBase):
         :param page:  页码
         :reutrn: 种子资源列表
         """
-        return await self.async_search_torrents(site=site, keyword=keyword, cat=cat, page=page)
+        return await self.async_search_torrents(site=site, keyword=keyword, cat=cat,
+                                                  page=page, search_type='auto')
 
     def refresh_userdata(self, site: dict) -> Optional[SiteUserData]:
         """

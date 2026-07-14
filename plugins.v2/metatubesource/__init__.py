@@ -7,6 +7,7 @@ import re
 from collections import deque
 from datetime import datetime, timedelta
 from typing import Any, Callable, Coroutine, Dict, Optional, List, Tuple
+import threading
 
 from app.chain import ChainBase
 from app.core.context import MediaInfo
@@ -29,6 +30,29 @@ from .schema import (
     ByteMuseMovie, ByteMuseSearchResponse
 )
 
+
+
+class _RateLimiter:
+    """Lightweight thread-safe rate limiter"""
+    def __init__(self, interval: float = 0.5):
+        self._interval = interval
+        self._last_time = None
+        self._lock = threading.Lock()
+
+    def acquire(self) -> bool:
+        with self._lock:
+            now = datetime.now()
+            if self._last_time is None or (now - self._last_time).total_seconds() >= self._interval:
+                self._last_time = now
+                return True
+            return False
+
+    def get_wait_time(self) -> float:
+        with self._lock:
+            if self._last_time is None:
+                return 0.0
+            elapsed = (datetime.now() - self._last_time).total_seconds()
+            return max(0.0, self._interval - elapsed)
 
 class MetatubeSource(_PluginBase):
     # 插件名称
@@ -228,20 +252,10 @@ class MetatubeSource(_PluginBase):
         "BOXSET", "COLLECTION", "SERIES", "SAGA",
 
         # === 常见影视类型 ===
-        "ANIME", "DRAMA", "COMEDY", "ACTION", "THRILLER",
-        "HORROR", "ROMANCE", "DOCUMENTARY", "BIography",
-        "FANTASY", "SCI-FI", "ADVENTURE", "CRIME", "MYSTERY",
 
-        # === 中文剧集/电影常见词 ===
-        "修仙", "修真", "武侠", "仙侠", "玄幻",
-        "凡人", "仙逆", "遮天", "剑来", "永生", "一念永恒", "牧神记",
-        "师兄", "师弟", "师父", "师傅", "宗门", "门派",
-        "修炼", "渡劫", "飞升", "元婴", "金丹", "筑基",
-        "动漫", "动画", "剧场版", "TV版", "OVA", "OAD",
-        "剧集", "连续剧", "电视剧", "网剧",
+        # === 中文剧集/电影常见词 === "OVA", "OAD",
 
         # === 常见动漫/剧集标题 ===
-        "咒术回战", "七王国的骑士", "权力的游戏", "王国", "骑士",
 
         # === 中文常见标识 ===
         "国语", "粤语", "中字", "中英", "双语",
@@ -292,28 +306,16 @@ class MetatubeSource(_PluginBase):
 
         # ==================== 新增：非成人内容排除标识 ====================
         # === 音乐演唱会标识 ===
-        "LIVE", "CONCERT", "ONEMAN", "TOUR", "FESTIVAL",
-        "演唱会", "音乐会", "现场表演", "演出", "LIVE-HOUSE",
 
         # === 短剧/网剧标识 ===
-        "SKIT", "短剧", "网剧", "小剧场", "小视频",
-        "微电影", "短片", "SHORT-FILM", "MINI-DRAMA",
 
         # === 综艺/访谈标识 ===
-        "VARIETY", "TALK-SHOW", "TALKSHOW",
-        "综艺", "访谈", "脱口秀", "TALK",
 
-        # === 歌曲/专辑标识 ===
-        "SONG", "SINGLE", "ALBUM", "MV", "MUSIC-VIDEO",
-        "歌曲", "单曲", "专辑", "音乐视频", "原声带", "OST",
+        # === 歌曲/专辑标识 === "MV",
 
         # === 视频创作者标识 ===
-        "YOUTUBER", "UP主", "VLOG", "VLOGGER",
-        "视频博主", "自媒体",
 
         # === 体育/游戏标识 ===
-        "E-SPORTS", "电子竞技", "游戏",
-        "HIGHLIGHTS", "集锦", "比赛", "MATCH",
     ]
 
     # ==================== 命名模板预设 ====================
@@ -394,8 +396,7 @@ class MetatubeSource(_PluginBase):
     def init_plugin(self, config: dict = None):
         """初始化插件"""
         # 初始化线程安全的频率限制器
-        from .utils.concurrency import RateLimiter
-        self._rate_limiter = RateLimiter(interval=0.5)
+        self._rate_limiter = _RateLimiter(interval=0.5)
 
         # 识别去重缓存：避免短时间内重复识别同一项目
         # {标题key: (结果状态, 时间戳)}
@@ -585,6 +586,10 @@ class MetatubeSource(_PluginBase):
 
         # 加载关键字文件（如果存在）
         self._load_keywords_from_file()
+
+
+        # Precompile keyword regex patterns for performance
+        self._precompiled_keywords = self._build_precompiled_keywords()
 
         if self._enabled:
             # 关键字优先模式：匹配关键词直接由 metatube 处理，不匹配则系统识别
@@ -1760,6 +1765,68 @@ class MetatubeSource(_PluginBase):
             self._file_keywords = {}
             self._file_keywords_loaded = False
 
+
+    def _build_precompiled_keywords(self) -> dict:
+        """
+        Precompile all keyword regex patterns for fast matching.
+        Returns dict mapping keyword -> compiled regex or None (for substring match).
+        """
+        compiled = {}
+        all_kw_lists = [
+            (self.BUILT_IN_JAPANESE_KEYWORDS, 'japanese'),
+            (self.BUILT_IN_WESTERN_KEYWORDS, 'western'),
+            (self.BUILT_IN_CHINESE_KEYWORDS, 'chinese'),
+            (self.BUILT_IN_OTHER_KEYWORDS, 'other'),
+        ]
+        # Add file keywords
+        if self._file_keywords:
+            for cat_key, cat_list in self._file_keywords.items():
+                filtered = self._filter_keywords(cat_list) if isinstance(cat_list, list) else []
+                all_kw_lists.append((filtered, cat_key))
+        
+        for keywords, _ in all_kw_lists:
+            for kw in keywords:
+                kw_upper = kw.upper() if not self._strict_match else kw
+                if len(kw_upper) <= 3:
+                    try:
+                        compiled[kw_upper] = re.compile(r'\b' + re.escape(kw_upper) + r'\b')
+                    except re.error:
+                        compiled[kw_upper] = None
+                else:
+                    compiled[kw_upper] = None  # None = use substring match
+
+        # Also add custom keywords
+        for custom_str in [self._custom_japanese_keywords, self._custom_western_keywords,
+                           self._custom_chinese_keywords, self._custom_other_keywords]:
+            if custom_str:
+                for kw in custom_str.split(','):
+                    kw = kw.strip().upper() if not self._strict_match else kw.strip()
+                    if not kw:
+                        continue
+                    if len(kw) <= 3:
+                        try:
+                            compiled[kw] = re.compile(r'\b' + re.escape(kw) + r'\b')
+                        except re.error:
+                            compiled[kw] = None
+                    else:
+                        compiled[kw] = None
+
+        # Precompile exclude keywords
+        self._precompiled_exclude = []
+        for kw in self.BUILT_IN_EXCLUDE_KEYWORDS:
+            if len(kw) > 2:
+                kw_upper = kw.upper() if not self._strict_match else kw
+                self._precompiled_exclude.append(kw_upper)
+        if self._exclude_keywords:
+            for kw in self._exclude_keywords.split(','):
+                kw = kw.strip()
+                if len(kw) > 2:
+                    kw_upper = kw.upper() if not self._strict_match else kw
+                    self._precompiled_exclude.append(kw_upper)
+
+        logger.debug(f"Metatube: Precompiled {len(compiled)} keyword patterns, {len(self._precompiled_exclude)} exclude patterns")
+        return compiled
+
     def _build_category(self, subcategory: str) -> str:
         """构建分类字符串"""
         return f"{self.CATEGORY_PREFIX}/{subcategory}"
@@ -1848,21 +1915,25 @@ class MetatubeSource(_PluginBase):
 
     def _match_keyword_in_text(self, keyword: str, search_text: str) -> bool:
         """
-        安全的关键字匹配，对超短关键字（≤3字符）使用词边界匹配，防止子串误命中
-
-        例如："AV" 不应匹配 "AVC"（视频编码），"TM" 不应匹配 "ATMOS"（音频格式）
+        安全的关键字匹配，对超短关键字（≤3字符）使用预编译词边界匹配
         """
+        # Check precompiled cache first
+        compiled = getattr(self, '_precompiled_keywords', None)
+        if compiled and keyword in compiled:
+            pattern = compiled[keyword]
+            if pattern is not None:
+                return pattern.search(search_text) is not None
+            else:
+                return keyword in search_text
+
+        # Fallback for non-precompiled (shouldn't happen normally)
         kw_len = len(keyword)
         if kw_len <= 3:
-            # 超短关键字使用词边界匹配
             try:
-                pattern = r'\b' + re.escape(keyword) + r'\b'
-                return re.search(pattern, search_text) is not None
+                return re.search(r'\b' + re.escape(keyword) + r'\b', search_text) is not None
             except re.error:
-                # 正则异常时 fallback 到子串匹配
                 return keyword in search_text
         else:
-            # 正常长度关键字使用子串匹配（保持原有行为）
             return keyword in search_text
 
     def _add_log(self, keyword: str, result: str, status: str, message: str, category: str = ""):
@@ -3015,35 +3086,16 @@ class MetatubeSource(_PluginBase):
             logger.error(f"ThePornDB: 异步识别异常 - {str(e)}")
             return None
 
-    def _is_jav_number(self, number: str) -> bool:
-        """
-        检测是否为 JAV 番号格式
+    # Precompiled JAV number patterns (compiled once at class load)
+    _JAV_NUMBER_PATTERNS = [
+        re.compile(r'^(?:FC2-PPV-\d{7,8}|HEYZO-\d{4}|[A-Z]{2,6}-\d{3,5}|\d{6}[-_]\d{3})$', re.IGNORECASE),
+    ]
 
-        :param number: 番号
-        :return: 是否为 JAV 格式
-        """
+    def _is_jav_number(self, number: str) -> bool:
+        """检测是否为 JAV 番号格式（使用预编译正则）"""
         if not number:
             return False
-
-        import re
-        jav_patterns = [
-            # 标准字母+数字格式
-            r'^[A-Z]{2,6}-\d{3,5}$',
-            # FC2 格式
-            r'^FC2-PPV-\d{7}$',
-            # HEYZO 格式
-            r'^HEYZO-\d{4}$',
-            # 数字+数字格式 (如 123456-123)
-            r'^\d{6}-\d{3}$',
-            # 纯数字开头 (如 1Pondo)
-            r'^\d{6}_\d{3}$',
-        ]
-
-        upper_number = number.upper()
-        for pattern in jav_patterns:
-            if re.match(pattern, upper_number):
-                return True
-        return False
+        return any(p.match(number) for p in self._JAV_NUMBER_PATTERNS)
 
     def _convert_theporndb_jav_to_mediainfo(self, jav_detail: ThePornDBJAVDetail) -> MediaInfo:
         """将 ThePornDB JAV 结果转换为 MediaInfo"""
@@ -3219,100 +3271,62 @@ class MetatubeSource(_PluginBase):
         for k in expired_keys:
             del self._recognize_cache[k]
 
-    def recognize_media(self, meta: MetaBase = None,
-                        mtype: MediaType = None,
-                        **kwargs) -> Optional[MediaInfo]:
+
+    def _recognize_pipeline(self, title: str, meta: MetaBase, mtype: Optional[MediaType],
+                            is_async: bool = False) -> Optional[MediaInfo]:
         """
-        识别媒体信息
-
-        :param meta: 识别的元数据
-        :param mtype: 识别的媒体类型
-        :return: 识别的媒体信息
+        Core recognition pipeline shared by sync and async paths.
+        Returns (MediaInfo or None).
         """
-        if not self._enabled:
+        if not self._enabled or not meta:
             return None
 
-        if not meta:
-            return None
-
-        # 获取标题
-        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
-
-        # 去重检查：如果最近已识别过该项目，直接返回之前的结果
-        cached_status = self._check_recognize_cache(title)
-        if cached_status == "skip":
-            return None
-        elif cached_status is not None:
-            # 之前识别过（可能是 success 或 fallback），重新执行以返回 MediaInfo
-            # 但仍记录缓存命中日志
-            logger.debug(f"Metatube: 缓存命中（重新执行）: {title[:50]} (上次: {cached_status})")
-
-        # Step 0: 检查文件大小（如果启用）
+        # Step 0: Check file size
         if self._skip_small_files:
-            file_size_mb = self._get_file_size_mb(meta, kwargs)
+            file_size_mb = self._get_file_size_mb(meta, {})
             if file_size_mb is not None and file_size_mb < self._small_file_threshold:
-                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过识别: {meta.name}")
-                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
-                return None  # 返回 None，让系统使用默认识别
+                logger.info(f"Metatube: 文件过小 ({file_size_mb:.1f}MB < {self._small_file_threshold}MB)，跳过: {meta.name}")
+                return None
 
-        # Step 1: 获取标题用于关键词分类检测
-        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
-
-        # Step 2: 关键词分类检测（优先于番号提取）
-        # 根据不同类别可以使用不同的提取和格式化规则
+        # Step 1: Category detection
         detected_category = self._detect_category_type(title)
-        logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
 
-        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
+        # Step 2: Skip if excluded
         if detected_category == self.SUBCATEGORY_SKIP:
-            logger.info(f"Metatube: 匹配到排除关键字，跳过识别，交由系统处理: {title}")
             self._set_recognize_cache(title, "skip")
-            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
+            return None
 
-        # Step 3: 提取番号（根据分类使用不同规则）
+        # Step 3: Extract number
         number = self._extract_number_from_meta(meta, detected_category)
         if not number:
-            logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
-            # 使用原始标题作为番号兜底，走失败处理流程
             result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
             self._set_recognize_cache(title, "none")
             return result
 
-        logger.info(f"Metatube: 正在识别番号 {number} (分类: {detected_category}) ...")
+        logger.info(f"Metatube: 识别番号 {number} (分类: {detected_category}) ...")
 
-        # Step 4: 根据分类和配置选择识别方式
-        # 优先级: ByteMuse -> ThePornDB JAV (JAV格式) -> ThePornDB (欧美) -> Metatube
-
-        # 1. 首先尝试 ByteMuse（如果启用）
+        # Step 4: Recognition source chain
+        # 4a. ByteMuse
         if self._bytemuse_enabled:
-            logger.info(f"Metatube: 使用 ByteMuse 作为主要识别源")
-            result = self._recognize_with_bytemuse(number)
+            result = self._call_recognize("bytemuse", number, title, is_async)
             if result:
                 return result
-            # ByteMuse 识别失败，继续尝试其他源
-            logger.info(f"Metatube: ByteMuse 识别失败，尝试备用识别源")
 
-        # 2. 尝试 ThePornDB JAV（如果是 JAV 格式且已启用）
+        # 4b. ThePornDB JAV (JAV format)
         is_jav = self._is_jav_number(number)
         if is_jav and self._theporndb_enabled and self._theporndb_api_token:
-            logger.info(f"Metatube: 检测到 JAV 格式番号，使用 ThePornDB JAV API")
-            result = self._recognize_with_theporndb_jav(number)
+            result = self._call_recognize("theporndb_jav", number, title, is_async)
             if result:
                 return result
-            # ThePornDB JAV 识别失败，继续尝试其他源
-            logger.info(f"Metatube: ThePornDB JAV 识别失败，继续尝试备用识别源")
 
-        # 3. 欧美系内容使用 ThePornDB
+        # 4c. ThePornDB (Western)
         if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled and self._theporndb_api_token:
-            logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
-            result = self._recognize_with_theporndb(title)
+            result = self._call_recognize("theporndb", title, title, is_async)
             if result:
                 return result
-            # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
-            logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
+            # Western fallback: create category entry if auto-download enabled
             if self._failed_download_control:
                 category = self._build_category(self.SUBCATEGORY_WESTERN)
-                logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
                 mediainfo = MediaInfo()
                 mediainfo.source = 'theporndb'
                 mediainfo.type = MediaType.MOVIE
@@ -3320,186 +3334,165 @@ class MetatubeSource(_PluginBase):
                 mediainfo.original_title = number
                 mediainfo.imdb_id = number
                 mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
+                self._add_log(number, f"{category} ({number})", "fallback", "ThePornDB识别失败，归类欧美系", category=category)
                 return mediainfo
-            else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category=self._build_category(self.SUBCATEGORY_WESTERN))
+            self._add_log(number, "", "failed", "ThePornDB识别失败", category=self._build_category(self.SUBCATEGORY_WESTERN))
+            return None
+
+        # 4d. Metatube API
+        return self._call_recognize("metatube", number, title, is_async,
+                                    extra={"detected_category": detected_category})
+
+    async def _recognize_pipeline_async(self, title: str, meta: MetaBase, mtype: Optional[MediaType]) -> Optional[MediaInfo]:
+        """Async wrapper for the pipeline"""
+        if not self._enabled or not meta:
+            return None
+
+        if self._skip_small_files:
+            file_size_mb = self._get_file_size_mb(meta, {})
+            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
                 return None
 
-        # 非欧美系内容使用 Metatube API
-        try:
-            # 搜索
-            results = self._metatube_client.search(number, fallback=True)
-            if not results:
-                logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-                result = self._handle_recognition_failure(number, title, "未找到匹配结果")
-                self._set_recognize_cache(title, "none")
+        detected_category = self._detect_category_type(title)
+        if detected_category == self.SUBCATEGORY_SKIP:
+            self._set_recognize_cache(title, "skip")
+            return None
+
+        number = self._extract_number_from_meta(meta, detected_category)
+        if not number:
+            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
+            self._set_recognize_cache(title, "none")
+            return result
+
+        logger.info(f"Metatube: 异步识别番号 {number} (分类: {detected_category}) ...")
+
+        if self._bytemuse_enabled:
+            result = await self._call_recognize_async("bytemuse", number, title)
+            if result:
                 return result
 
-            # 取第一个结果
-            movie = results[0]
+        is_jav = self._is_jav_number(number)
+        if is_jav and self._theporndb_enabled and self._theporndb_api_token:
+            result = await self._call_recognize_async("theporndb_jav", number, title)
+            if result:
+                return result
 
-            # 尝试获取详情(可选)
-            detail = None
-            if movie.provider and movie.id:
-                try:
-                    detail = self._metatube_client.get_detail(movie.provider, movie.id)
-                except Exception as e:
-                    logger.debug(f"Metatube: 获取详情失败: {str(e)}")
+        if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled and self._theporndb_api_token:
+            result = await self._call_recognize_async("theporndb", title, title)
+            if result:
+                return result
+            if self._failed_download_control:
+                category = self._build_category(self.SUBCATEGORY_WESTERN)
+                mediainfo = MediaInfo()
+                mediainfo.source = 'theporndb'
+                mediainfo.type = MediaType.MOVIE
+                mediainfo.title = number
+                mediainfo.original_title = number
+                mediainfo.imdb_id = number
+                mediainfo.set_category(category)
+                self._add_log(number, f"{category} ({number})", "fallback", "ThePornDB识别失败，归类欧美系", category=category)
+                return mediainfo
+            return None
 
-            # 转换为 MediaInfo（识别成功固定为"日系"分类）
-            mediainfo = self._convert_to_mediainfo(movie, detail)
+        return await self._call_recognize_async("metatube", number, title,
+                                                  extra={"detected_category": detected_category})
 
-            # 记录日志（识别成功固定为"日系"分类）
-            category = self._build_category(self.SUBCATEGORY_JAPANESE)
-            self._add_log(number, mediainfo.title, "success",
-                          f"来源: {movie.provider}", category=category)
-            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-            self._set_recognize_cache(title, "success")
-            return mediainfo
-
+    def _call_recognize(self, source: str, query: str, title: str, is_async: bool,
+                        extra: dict = None) -> Optional[MediaInfo]:
+        """Dispatch to the right recognition source (sync)"""
+        try:
+            if source == "bytemuse":
+                return self._recognize_with_bytemuse(query)
+            elif source == "theporndb_jav":
+                return self._recognize_with_theporndb_jav(query)
+            elif source == "theporndb":
+                return self._recognize_with_theporndb(title)
+            elif source == "metatube":
+                return self._recognize_with_metatube(query, title, extra)
         except Exception as e:
-            # 异常处理
             failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            logger.error(f"Metatube: 识别异常 - {str(e)}")
-            # 修复：使用 title 而不是 number 进行分类检测
-            result = self._handle_recognition_failure(number, title, failure_msg)
-            self._set_recognize_cache(title, "error")
-            return result
+            logger.error(f"Metatube: {source} 识别异常 - {e}")
+            return self._handle_recognition_failure(query, title, failure_msg)
+        return None
+
+    async def _call_recognize_async(self, source: str, query: str, title: str,
+                                     extra: dict = None) -> Optional[MediaInfo]:
+        """Dispatch to the right recognition source (async)"""
+        try:
+            if source == "bytemuse":
+                return await self._async_recognize_with_bytemuse(query)
+            elif source == "theporndb_jav":
+                return await self._async_recognize_with_theporndb_jav(query)
+            elif source == "theporndb":
+                return await self._async_recognize_with_theporndb(title)
+            elif source == "metatube":
+                return await self._recognize_with_metatube_async(query, title, extra)
+        except Exception as e:
+            failure_msg = str(e) if self._show_failure_detail else "识别异常"
+            logger.error(f"Metatube: {source} 异步识别异常 - {e}")
+            return self._handle_recognition_failure(query, title, failure_msg)
+        return None
+
+    def _recognize_with_metatube(self, number: str, title: str, extra: dict = None) -> Optional[MediaInfo]:
+        """Metatube API recognition (sync)"""
+        results = self._metatube_client.search(number, fallback=True)
+        if not results:
+            return self._handle_recognition_failure(number, title, "未找到匹配结果")
+
+        movie = results[0]
+        detail = None
+        if movie.provider and movie.id:
+            try:
+                detail = self._metatube_client.get_detail(movie.provider, movie.id)
+            except Exception:
+                pass
+
+        mediainfo = self._convert_to_mediainfo(movie, detail)
+        category = self._build_category(self.SUBCATEGORY_JAPANESE)
+        self._add_log(number, mediainfo.title, "success", f"来源: {movie.provider}", category=category)
+        self._set_recognize_cache(title, "success")
+        return mediainfo
+
+    async def _recognize_with_metatube_async(self, number: str, title: str, extra: dict = None) -> Optional[MediaInfo]:
+        """Metatube API recognition (async)"""
+        results = await self._metatube_client.async_search(number, fallback=True)
+        if not results:
+            return self._handle_recognition_failure(number, title, "未找到匹配结果")
+
+        movie = results[0]
+        detail = None
+        if movie.provider and movie.id:
+            try:
+                detail = await self._metatube_client.async_get_detail(movie.provider, movie.id)
+            except Exception:
+                pass
+
+        mediainfo = self._convert_to_mediainfo(movie, detail)
+        category = self._build_category(self.SUBCATEGORY_JAPANESE)
+        self._add_log(number, mediainfo.title, "success", f"来源: {movie.provider}", category=category)
+        self._set_recognize_cache(title, "success")
+        return mediainfo
+
+    def recognize_media(self, meta: MetaBase = None,
+                        mtype: MediaType = None,
+                        **kwargs) -> Optional[MediaInfo]:
+        """
+        识别媒体信息（委托给统一 pipeline）
+        """
+        title = (meta.org_string or meta.cn_name or meta.en_name or meta.name or "") if meta else ""
+        cached = self._check_recognize_cache(title)
+        if cached == "skip":
+            return None
+        return self._recognize_pipeline(title, meta, mtype, is_async=False)
 
     async def async_recognize_media(self, meta: MetaBase = None,
                                     mtype: MediaType = None,
                                     **kwargs) -> Optional[MediaInfo]:
         """
-        异步识别媒体信息
-
-        :param meta: 识别的元数据
-        :param mtype: 识别的媒体类型
-        :return: 识别的媒体信息
+        异步识别媒体信息（委托给统一 pipeline）
         """
-        if not self._enabled:
+        title = (meta.org_string or meta.cn_name or meta.en_name or meta.name or "") if meta else ""
+        cached = self._check_recognize_cache(title)
+        if cached == "skip":
             return None
-
-        if not meta:
-            return None
-
-        # Step 0: 检查文件大小（如果启用）
-        if self._skip_small_files:
-            file_size_mb = self._get_file_size_mb(meta, kwargs)
-            if file_size_mb is not None and file_size_mb < self._small_file_threshold:
-                logger.info(f"Metatube: 文件大小 {file_size_mb:.2f}MB 小于阈值 {self._small_file_threshold}MB，跳过异步识别: {meta.name}")
-                self._add_log(meta.name, "", "skipped", f"文件过小 ({file_size_mb:.2f}MB < {self._small_file_threshold}MB)", category=None)
-                return None  # 返回 None，让系统使用默认识别
-
-        # Step 1: 获取标题
-        title = meta.org_string or meta.cn_name or meta.en_name or meta.name or ""
-
-        # Step 2: 关键词分类检测（优先于番号提取）
-        detected_category = self._detect_category_type(title)
-        logger.debug(f"Metatube: 关键词分类检测结果: {detected_category}")
-
-        # 去重检查
-        cached_status = self._check_recognize_cache(title)
-        if cached_status == "skip":
-            return None
-
-        # Step 2.5: 如果匹配到排除关键字，直接跳过识别
-        if detected_category == self.SUBCATEGORY_SKIP:
-            logger.info(f"Metatube: 匹配到排除关键字，跳过异步识别，交由系统处理: {title}")
-            self._set_recognize_cache(title, "skip")
-            return None  # 返回 None，让系统使用默认的 IMDB/TMDB 识别
-
-        # Step 3: 提取番号（根据分类使用不同规则）
-        number = self._extract_number_from_meta(meta, detected_category)
-        if not number:
-            logger.debug(f"Metatube: 无法从 '{meta.name}' 中提取番号")
-            # 使用原始标题作为番号兜底，走失败处理流程
-            result = self._handle_recognition_failure(title or meta.name or "", title, "无法提取番号")
-            self._set_recognize_cache(title, "none")
-            return result
-
-        logger.info(f"Metatube: 正在异步识别番号 {number} ...")
-
-        # Step 4: 根据分类和配置选择识别方式
-        # 优先级: ByteMuse -> ThePornDB JAV (JAV格式) -> ThePornDB (欧美) -> Metatube
-
-        # 1. 首先尝试 ByteMuse（如果启用）
-        if self._bytemuse_enabled:
-            logger.info(f"Metatube: 使用 ByteMuse 作为主要识别源（异步）")
-            result = await self._async_recognize_with_bytemuse(number)
-            if result:
-                return result
-            # ByteMuse 识别失败，继续尝试其他源
-            logger.info(f"Metatube: ByteMuse 异步识别失败，尝试备用识别源")
-
-        # 2. 尝试 ThePornDB JAV（如果是 JAV 格式且已启用）
-        is_jav = self._is_jav_number(number)
-        if is_jav and self._theporndb_enabled and self._theporndb_api_token:
-            logger.info(f"Metatube: 检测到 JAV 格式番号，使用 ThePornDB JAV API（异步）")
-            result = await self._async_recognize_with_theporndb_jav(number)
-            if result:
-                return result
-            # ThePornDB JAV 识别失败，继续尝试其他源
-            logger.info(f"Metatube: ThePornDB JAV 异步识别失败，继续尝试备用识别源")
-
-        # 3. 欧美系内容使用 ThePornDB
-        if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled:
-            logger.info(f"Metatube: 检测到欧美系内容，转交 ThePornDB 处理")
-            result = await self._async_recognize_with_theporndb(title)
-            if result:
-                return result
-            # ThePornDB 识别失败，不再回退到 Metatube，直接按欧美系处理
-            logger.info(f"Metatube: ThePornDB 识别失败，欧美系内容不回退 Metatube")
-            if self._failed_download_control:
-                category = self._build_category(self.SUBCATEGORY_WESTERN)
-                logger.info(f"Metatube: 欧美系内容识别失败，归类为'{category}'分类")
-                mediainfo = MediaInfo()
-                mediainfo.source = 'theporndb'
-                mediainfo.type = MediaType.MOVIE
-                mediainfo.title = number
-                mediainfo.original_title = number
-                mediainfo.imdb_id = number
-                mediainfo.set_category(category)
-                self._add_log(number, f"{category} ({number})", "success", "ThePornDB识别失败但已归类为欧美系", category=category)
-                return mediainfo
-            else:
-                self._add_log(number, "", "failed", "ThePornDB识别失败，未启用失败自动下载", category=self._build_category(self.SUBCATEGORY_WESTERN))
-                return None
-
-        try:
-            # 异步搜索
-            results = await self._metatube_client.async_search(number, fallback=True)
-            if not results:
-                logger.warning(f"Metatube: 番号 {number} 未找到匹配结果")
-                return self._handle_recognition_failure(number, title, "未找到匹配结果")
-
-            # 取第一个结果
-            movie = results[0]
-
-            # 尝试获取详情(可选)
-            detail = None
-            if movie.provider and movie.id:
-                try:
-                    detail = await self._metatube_client.async_get_detail(movie.provider, movie.id)
-                except Exception as e:
-                    logger.debug(f"Metatube: 获取详情失败: {str(e)}")
-
-            # 转换为 MediaInfo（识别成功固定为"日系"分类）
-            mediainfo = self._convert_to_mediainfo(movie, detail)
-
-            # 记录日志（识别成功固定为"日系"分类）
-            category = self._build_category(self.SUBCATEGORY_JAPANESE)
-            self._add_log(number, mediainfo.title, "success",
-                          f"来源: {movie.provider}", category=category)
-            logger.info(f"Metatube: 识别成功 - {number} -> {mediainfo.title} (分类: {category})")
-            self._set_recognize_cache(title, "success")
-            return mediainfo
-
-        except Exception as e:
-            # 异常处理
-            failure_msg = str(e) if self._show_failure_detail else "识别异常"
-            logger.error(f"Metatube: 异步识别异常 - {str(e)}")
-            # 修复：使用 title 而不是 number 进行分类检测
-            result = self._handle_recognition_failure(number, title, failure_msg)
-            self._set_recognize_cache(title, "error")
-            return result
+        return await self._recognize_pipeline_async(title, meta, mtype)

@@ -3,7 +3,7 @@
 本目录包含 MoviePilot 的核心补丁文件，用于实现自定义功能（ByteMuse 探索详情、成人内容搜索、前端增强等）。
 
 > **版本对应**: MoviePilot v2.10.2 (`jxxghp/moviepilot:2.10.2`)
-> **更新日期**: 2026-05-19
+> **更新日期**: 2026-07-14
 
 ---
 
@@ -55,6 +55,37 @@
 **作用**: 搜索链路 + 爬虫补丁，支持成人内容搜索。
 
 **挂载**: docker-compose.yml 中直接挂载到容器（`ro`），容器更新后不受影响。
+
+#### spider_init.py 补丁详情 (2026-07-14)
+
+三处核心修改：
+
+**① ADULT_INJECT — 成人分类参数注入**
+- PTFans/1PTBA 的 SitesHelper 分类数据缺少成人分类（`category` 只有 movie/tv/documentary）
+- 补丁在搜索和浏览两个分支中，检测域名并注入对应的成人 cat 参数
+- PTFans: cat419-429（无码、中文字幕等 11 个分类）
+- 1PTBA: cat610-625（无码、中文字幕等 16 个分类）
+- 同时禁用显式代理（TUN 模式直连），避免 adult 站点 cookie 泄漏
+
+**② SEARCH_URL_FIX — 搜索端点修正**
+- PTFans 的关键字搜索端点是 `search.php`（不是 `torrents.php`）
+- 1PTBA 的关键字搜索端点是 `special.php`（不是 `torrents.php`）
+- SitesHelper 统一配置为 `torrents.php`（仅支持浏览/无关键字）
+- 补丁在 `__get_search_url()` 返回前，按域名替换为正确的搜索端点
+
+**③ Python Fallback — Rust 解析器回退**
+- 当 `rust_accel.parse_indexer_torrents()` 返回空列表时，回退到 Python CSS 选择器解析
+- 原代码仅判断 `is not None` 即返回，空列表不会触发 Python fallback
+
+#### indexer_init.py 补丁详情
+
+- 搜索入口支持 `search_type` 参数（normal/adult/all/auto）
+- auto 模式下通过 `_is_adult_keyword()` 自动判断是否需要注入成人分类
+
+#### chain_search.py / chain_init.py
+
+- `TorrentsChain.async_browse()` 透传 `search_type` 到 IndexerModule
+- 无需单独部署，`ChainBase.async_run_module()` 自动路由
 
 ---
 
@@ -149,6 +180,27 @@ cp -r plugins.v2/metatubesource /mnt/nvme0n1p1/Configs/MoviePilot/plugins/v2/
 
 # 3. docker-compose up -d MoviePilot
 ```
+
+### 方式三：热更新补丁（不重新构建镜像）
+
+适用于快速迭代：直接 `docker cp` 补丁文件到容器，清除 `__pycache__`，重启容器。
+
+```bash
+# SSH 到宿主机
+docker cp spider_init.py Moviepilot:/app/app/modules/indexer/spider/__init__.py
+docker cp indexer_init.py Moviepilot:/app/app/modules/indexer/__init__.py
+
+# 清除所有 pycache（关键！否则可能加载旧的 .pyc）
+docker exec Moviepilot find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null
+
+# 重启容器
+docker kill Moviepilot && docker start Moviepilot
+```
+
+⚠️ **注意事项**:
+- 每次部署后**必须验证语法**: `docker exec Moviepilot python3 -c "import py_compile; py_compile.compile('/app/app/modules/indexer/spider/__init__.py', doraise=True)"`
+- SyntaxError 会导致 IndexerModule **静默加载失败**（无错误日志！），所有搜索返回 0
+- 必须清除 `__pycache__`，否则 Python 可能加载旧的 `.pyc` 文件
 
 ### 容器启动后热更新前端（无需重启）
 
