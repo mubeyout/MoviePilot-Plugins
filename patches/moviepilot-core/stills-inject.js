@@ -1,14 +1,106 @@
 (function(){
-console.log('[BM] v16 LOADED');
+console.log('[BM] v20 LOADED (native sliders + subscribe fix)');
 
 var _done={};
 var _pending=null;
+var _ak='';
 
+// Get API token from global (set by inject_stills.py head hook)
+if(window.__BM_API_TOKEN){_ak=window.__BM_API_TOKEN}
+
+// ===== XHR Interception =====
+var _origOpen=XMLHttpRequest.prototype.open;
+var _origSend=XMLHttpRequest.prototype.send;
+
+XMLHttpRequest.prototype.open=function(method,url,async,user,pass){
+  this._bmMethod=method;
+  this._bmUrl=url;
+  if(url){
+    // Intercept recommend: tmdb/recommend/BM_{code} -> bytemuse_similar (同演员作品 = 推荐)
+    var recMatch=url.match(/tmdb\/recommend\/BM_([^\/]+)/);
+    // Intercept similar: tmdb/similar/BM_{code} -> bytemuse_recommend (月榜 = 类似)
+    var simMatch=url.match(/tmdb\/similar\/BM_([^\/]+)/);
+    // Intercept credits: tmdb/credits/BM_{code} -> bytemuse_credits (演员阵容)
+    var credMatch=url.match(/tmdb\/credits\/BM_([^\/]+)/);
+
+    if(recMatch||simMatch||credMatch){
+      var code=recMatch?recMatch[1]:(simMatch?simMatch[1]:credMatch[1]);
+      var endpoint='';
+      if(recMatch) endpoint='bytemuse_similar';      // 推荐 = 同演员作品
+      else if(simMatch) endpoint='bytemuse_recommend'; // 类似 = 月榜
+      else endpoint='bytemuse_credits';                // 演员阵容
+
+      var newUrl='/api/v1/plugin/ByteMuseDiscover/'+endpoint+'/'+encodeURIComponent(code);
+      var akMatch=url.match(/[?&]apikey=([^&]+)/);
+      var apiKey=akMatch?akMatch[1]:_ak;
+      if(apiKey) newUrl+='?apikey='+encodeURIComponent(apiKey);
+      url=newUrl;
+      console.log('[BM] XHR redirect ->',url);
+    }
+  }
+  return _origOpen.call(this,method,url,async!==false,user,pass);
+};
+
+// Intercept subscribe POST: strip BM_ prefix from tmdbid in request body
+XMLHttpRequest.prototype.send=function(body){
+  if(this._bmMethod==='POST'&&this._bmUrl&&this._bmUrl.indexOf('subscribe')>=0&&typeof body==='string'){
+    try{
+      var modified=body.replace(/"tmdbid"\s*:\s*"BM_([^"]+)"/g, function(m,code){
+        return '"tmdbid":"'+code+'"';
+      });
+      if(modified!==body){
+        console.log('[BM] subscribe: stripped BM_ prefix from tmdbid');
+        body=modified;
+      }
+    }catch(e){}
+  }
+  return _origSend.call(this,body);
+};
+
+// ===== fetch interception =====
+var _origFetch=window.fetch;
+window.fetch=function(input,init){
+  var url=typeof input==='string'?input:(input&&input.url)||'';
+  var recMatch=url.match(/tmdb\/recommend\/BM_([^\/]+)/);
+  var simMatch=url.match(/tmdb\/similar\/BM_([^\/]+)/);
+  var credMatch=url.match(/tmdb\/credits\/BM_([^\/]+)/);
+
+  if(recMatch||simMatch||credMatch){
+    var code=recMatch?recMatch[1]:(simMatch?simMatch[1]:credMatch[1]);
+    var endpoint='';
+    if(recMatch) endpoint='bytemuse_similar';
+    else if(simMatch) endpoint='bytemuse_recommend';
+    else endpoint='bytemuse_credits';
+
+    var newUrl='/api/v1/plugin/ByteMuseDiscover/'+endpoint+'/'+encodeURIComponent(code);
+    var akMatch=url.match(/[?&]apikey=([^&]+)/);
+    var apiKey=akMatch?akMatch[1]:_ak;
+    if(apiKey) newUrl+='?apikey='+encodeURIComponent(apiKey);
+    console.log('[BM] fetch redirect ->',newUrl);
+    return _origFetch.call(this,newUrl,init);
+  }
+
+  // Intercept subscribe POST: strip BM_ prefix from tmdbid
+  if(init&&init.method==='POST'&&typeof url==='string'&&url.indexOf('subscribe')>=0&&init.body&&typeof init.body==='string'){
+    try{
+      var modified=init.body.replace(/"tmdbid"\s*:\s*"BM_([^"]+)"/g, function(m,code){
+        return '"tmdbid":"'+code+'"';
+      });
+      if(modified!==init.body){
+        console.log('[BM] subscribe fetch: stripped BM_ prefix');
+        init=Object.assign({},init,{body:modified});
+      }
+    }catch(e){}
+  }
+
+  return _origFetch.call(this,input,init);
+};
+
+// ===== Stills / Description Injection =====
 function getMediaId(){
   var m=location.hash.match(/mediaid=([^&]+)/);
   if(!m)return null;
-  var raw=decodeURIComponent(m[1]);
-  return raw.replace(/^[^:]+:/,'');
+  return decodeURIComponent(m[1]).replace(/^[^:]+:/,'');
 }
 
 function checkAndInject(){
@@ -16,7 +108,7 @@ function checkAndInject(){
   if(!mid)return;
   if(_done[mid])return;
   var ov=document.querySelector('.media-overview');
-  if(ov&&ov.dataset.bmStills==='1'){_done[mid]=1;return}
+  if(ov&&ov.dataset.bmDone==='1'){_done[mid]=1;return}
   if(!_pending||_pending!==mid){_pending=mid;fetchDetail(mid)}
 }
 
@@ -26,7 +118,8 @@ function fetchDetail(mid){
     .then(function(data){
       _pending=null;
       if(!data)return;
-      if(!data.stills||!data.stills.length)return;
+      var hasData=(data.stills&&data.stills.length)||(data.description);
+      if(!hasData)return;
       _done[mid]=1;
       doInject(data);
     })
@@ -35,140 +128,40 @@ function fetchDetail(mid){
 
 function doInject(data){
   var ov=document.querySelector('.media-overview');
-  if(!ov)return;
-  if(ov.dataset.bmStills==='1')return;
+  if(!ov||ov.dataset.bmDone==='1')return;
 
   var stills=data.stills||[];
-  var similar=data.similar||[];
-  var monthly=data.monthly||[];
   var description=data.description||'';
-  var actors=data.actors||[];
 
-  // 1. Fill overview-left: description + actor credits
   var overviewLeft=ov.querySelector('.media-overview-left');
   if(overviewLeft){
-    // Fill description
     var pEl=overviewLeft.querySelector('p');
     if(pEl&&description){
       pEl.textContent=description;
       pEl.style.whiteSpace='pre-wrap';
     }
-    // Fill actor credits
-    var crewUl=overviewLeft.querySelector('.media-crew');
-    if(crewUl&&actors.length){
-      var crewHtml='';
-      for(var a=0;a<actors.length;a++){
-        var actor=actors[a];
-        if(!actor.name)continue;
-        crewHtml+='<li><span class="media-crew-name">'+actor.name+'</span></li>';
-      }
-      crewUl.innerHTML=crewHtml;
-    }
   }
 
-  // 2. 剧照 → insert AFTER media-overview (not inside)
   if(stills.length){
-    ov.insertAdjacentHTML('afterend',makeSlider('\u5267\u7167',stills,true));
+    ov.insertAdjacentHTML('afterend',makeStillSlider(stills));
     ov.parentElement.querySelectorAll('.bm-still').forEach(function(el){
       el.addEventListener('click',function(){lbOpen(parseInt(el.dataset.i),stills)});
     });
-    ov.dataset.bmStills='1';
     console.log('[BM] stills:',stills.length);
   }
 
-  // 3. 推荐 → fill TMDB native "推荐" slider
-  if(similar.length){
-    fillNativeSlider('\u63a8\u8350',similar);
-    console.log('[BM] recommend:',similar.length);
-  }
-
-  // 4. 类似 → fill TMDB native "类似" slider
-  if(monthly.length){
-    fillNativeSlider('\u7c7b\u4f3c',monthly);
-    console.log('[BM] similar:',monthly.length);
-  }
+  ov.dataset.bmDone='1';
 }
 
-function fillNativeSlider(titleText,items){
-  var attempts=0;
-  function tryFill(){
-    attempts++;
-    var filled=false;
-    document.querySelectorAll('.slider-container').forEach(function(s){
-      if(filled)return;
-      var h=s.querySelector('.title-text');
-      if(!h||h.textContent.trim()!==titleText)return;
-      var sc=s.querySelector('.slider-content');
-      if(!sc)return;
-
-      // If slider is empty (TMDB returned nothing), fill it
-      if(sc.children.length===0){
-        sc.innerHTML=buildCards(items);
-        showSlider(s);
-        filled=true;
-      }
-    });
-    // If native slider not found yet, retry (Vue may not have rendered)
-    if(!filled&&attempts<40){setTimeout(tryFill,300)}
-  }
-  tryFill();
-}
-
-function buildCards(items){
-  var html='';
-  for(var i=0;i<items.length;i++){
-    var it=items[i];
-    var t=(it.title||'').length>28?(it.title||'').substring(0,28)+'...':(it.title||'');
-    var p=it.poster_path||it.poster||'';
-    var mid=it.media_id||it.id||'';
-    if(mid&&!/^metatube_search:/.test(mid))mid='metatube_search:'+mid;
-    html+='<div style="width:9rem;flex-shrink:0"><a href="#/media?mediaid='+encodeURIComponent(mid)+'&type=\u7535\u5f71" style="text-decoration:none;color:inherit">';
-    html+='<div class="v-card v-theme--dark v-card--density-default elevation-0 rounded-lg v-card--variant-elevated outline-none overflow-hidden" style="width:9rem;cursor:pointer">';
-    if(p){
-      html+='<div style="padding-bottom:150%;position:relative"><img src="'+p+'" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'"></div>';
-    }else{
-      html+='<div style="padding-bottom:150%"></div>';
-    }
-    html+='<div style="padding:.3rem .4rem;font-size:.65rem;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t+'</div>';
-    html+='</div></a></div>';
-  }
-  return html;
-}
-
-function showSlider(s){
-  // Walk up to find the wrapper with data-v-eac58b7f and un-hide
-  var w=s.parentElement;
-  while(w){
-    if(w.hasAttribute('data-v-eac58b7f')){w.style.display='';break}
-    w=w.parentElement;
-  }
-  s.style.display='';
-  if(s.dataset.bmHidden)delete s.dataset.bmHidden;
-}
-
-function makeSlider(title,items,isStill){
-  if(!items||!items.length)return'';
+function makeStillSlider(stills){
   var h='<div class="bytemuse-section" style="margin-top:1.5rem">';
   h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.6rem;padding:0 .25rem">';
-  h+='<span style="font-size:.95rem;font-weight:600">'+title+'</span>';
-  h+='<span style="font-size:.7rem;opacity:.5">'+items.length+'</span></div>';
+  h+='<span style="font-size:.95rem;font-weight:600">剧照</span>';
+  h+='<span style="font-size:.7rem;opacity:.5">'+stills.length+'</span></div>';
   h+='<div style="display:flex;gap:.5rem;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:.5rem;scrollbar-width:thin">';
-  for(var i=0;i<items.length;i++){
-    if(isStill){
-      h+='<div class="bm-still" data-i="'+i+'" style="flex-shrink:0;width:200px;scroll-snap-align:start;border-radius:.5rem;overflow:hidden;cursor:pointer">';
-      h+='<img src="'+items[i]+'" style="width:100%;aspect-ratio:3/2;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.remove()"></div>';
-    }else{
-      var it=items[i];
-      var t=(it.title||'').length>24?(it.title||'').substring(0,24)+'...':(it.title||'');
-      var p=it.poster_path||it.poster||'';
-      var mid=it.media_id||it.id||'';
-      if(mid&&!/^metatube_search:/.test(mid))mid='metatube_search:'+mid;
-      h+='<a href="#/media?mediaid='+encodeURIComponent(mid)+'&type=\u7535\u5f71" style="flex-shrink:0;width:110px;scroll-snap-align:start;text-decoration:none;color:inherit;display:block">';
-      h+='<div style="border-radius:.5rem;overflow:hidden">';
-      if(p)h+='<img src="'+p+'" style="width:100%;aspect-ratio:2/3;object-fit:cover;display:block" loading="lazy" onerror="this.style.display=\'none\'">';
-      else h+='<div style="width:100%;aspect-ratio:2/3;background:rgba(100,100,100,.1)"></div>';
-      h+='<div style="padding:.35rem .4rem;font-size:.65rem;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+t+'</div></div></a>';
-    }
+  for(var i=0;i<stills.length;i++){
+    h+='<div class="bm-still" data-i="'+i+'" style="flex-shrink:0;width:200px;scroll-snap-align:start;border-radius:.5rem;overflow:hidden;cursor:pointer">';
+    h+='<img src="'+stills[i]+'" style="width:100%;aspect-ratio:3/2;object-fit:cover;display:block" loading="lazy" onerror="this.parentElement.remove()"></div>';
   }
   h+='</div></div>';
   return h;
@@ -208,5 +201,10 @@ function lbClose(){if(_lb){_lb.remove();_lb=null;document.removeEventListener('k
 function lbKey(e){if(!_lb)return;if(e.key==='ArrowLeft')lbNav(-1);if(e.key==='ArrowRight')lbNav(1);if(e.key==='Escape')lbClose()}
 
 setInterval(checkAndInject,500);
-window.addEventListener('hashchange',function(){_done={};setTimeout(checkAndInject,300)});
+window.addEventListener('hashchange',function(){
+  _done={};
+  var ov=document.querySelector('.media-overview');
+  if(ov)delete ov.dataset.bmDone;
+  setTimeout(checkAndInject,300);
+});
 })();

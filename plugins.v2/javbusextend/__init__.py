@@ -19,7 +19,7 @@ class JavBusExtend(_PluginBase):
     plugin_name = "JavBusExtend"
     plugin_desc = "扩展检索以支持 JavBus 番号磁力搜索"
     plugin_icon = "JavBus.png"
-    plugin_version = "1.0"
+    plugin_version = "1.1"
     plugin_author = "kai"
     author_url = ""
     plugin_config_prefix = "javbus_extend_"
@@ -28,7 +28,7 @@ class JavBusExtend(_PluginBase):
 
     _enabled = False
     _api_base = "http://10.0.0.1:8922"
-    _request_interval = 1.5
+    _request_interval = 1.0
     _last_request_time = 0.0
     _sites_helper = None
     _javbus_domain = "javbus.com"
@@ -69,8 +69,11 @@ class JavBusExtend(_PluginBase):
             time.sleep(self._request_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _api_get(self, path: str) -> Optional[dict]:
-        """调用 javbus-api（不走代理）"""
+    def _api_get(self, path: str) -> Optional[Any]:
+        """
+        调用 javbus-api（不走代理）
+        返回解析后的 JSON（dict 或 list），失败返回 None
+        """
         self._rate_limit()
         try:
             import urllib.request
@@ -88,7 +91,9 @@ class JavBusExtend(_PluginBase):
             logger.warning(f"【{self.plugin_name}】API 请求失败: {path} -> {e}")
             return None
 
-    def _parse_size(self, size_str: str) -> float:
+    @staticmethod
+    def _parse_size(size_str: str) -> float:
+        """将 '6.30GB' 等字符串转为 MB float"""
         if not size_str:
             return 0.0
         try:
@@ -101,13 +106,81 @@ class JavBusExtend(_PluginBase):
         except (ValueError, TypeError):
             return 0.0
 
+    def _fetch_magnets_for_movie(self, movie_id: str) -> List[dict]:
+        """
+        获取某部影片的所有磁力链接。
+        1. 调用详情接口获取 gid/uc
+        2. 用 gid/uc 调用磁力接口
+
+        :return: 磁力 dict 列表 [{link, title, size, shareDate, ...}, ...]
+        """
+        if not movie_id:
+            return []
+
+        # 1) 获取详情（含 gid/uc）
+        detail = self._api_get(f"/api/movies/{movie_id}")
+        if not detail or not isinstance(detail, dict):
+            logger.debug(f"【{self.plugin_name}】{movie_id} 详情获取失败")
+            return []
+
+        gid = detail.get('gid', '')
+        uc = detail.get('uc', '')
+
+        if not gid or not uc:
+            logger.debug(f"【{self.plugin_name}】{movie_id} 缺少 gid/uc，无法获取磁力链接 (gid={gid}, uc={uc})")
+            return []
+
+        # 2) 获取磁力链接
+        magnets_data = self._api_get(
+            f"/api/magnets/{movie_id}?gid={gid}&uc={uc}"
+        )
+        if not magnets_data:
+            return []
+
+        # API 可能返回 list 或 {"magnets": [...]}
+        if isinstance(magnets_data, list):
+            return magnets_data
+        if isinstance(magnets_data, dict):
+            return magnets_data.get('magnets', [])
+        return []
+
+    @staticmethod
+    def _magnet_to_torrent_dict(movie_id: str, m: dict) -> Optional[dict]:
+        """将单个磁力信息转换为 indexer dict 格式"""
+        magnet = m.get('link') or m.get('magnet', '')
+        if not magnet:
+            return None
+
+        name = m.get('title') or m.get('name', '')
+        size_str = m.get('size', '') or ''
+        date = m.get('shareDate') or m.get('date', '')
+
+        # 构建标签描述
+        tags = []
+        if m.get('isHD'):
+            tags.append('HD')
+        if m.get('hasSubtitle'):
+            tags.append('字幕')
+        tag_str = f" [{'/'.join(tags)}]" if tags else ''
+
+        return {
+            "title": f"{name}{tag_str} [{size_str}]" if size_str else f"{name}{tag_str}",
+            "enclosure": magnet,
+            "size": JavBusExtend._parse_size(size_str),
+            "description": f"{movie_id} | {name} | {size_str} | {date}{tag_str}",
+            "page_url": "",
+        }
+
+    # ==================== 搜索接口 ====================
+
     def search_torrents(self, site: dict, keyword: str,
                         mtype: MediaType = None, page: int = 0,
-                        search_type: str = None) -> List[TorrentInfo]:
+                        search_type: str = None) -> List[dict]:
         """
-        搜索 JavBus 磁力资源
+        搜索 JavBus 磁力资源（按番号关键词搜索）
+        返回 dict 列表，每个 dict 含 title/enclosure/size/description/page_url
         """
-        # 仅处理 JavBus 站点，其他站点返回空让系统走默认搜索
+        # 仅处理 JavBus 站点
         if self._javbus_domain not in str(site.get('domain', '')).lower():
             return []
 
@@ -122,6 +195,7 @@ class JavBusExtend(_PluginBase):
 
         movies = result.get('movies', []) if isinstance(result, dict) else result
         if not movies:
+            logger.info(f"【{self.plugin_name}】搜索 {keyword}，未找到结果")
             return []
 
         logger.info(f"【{self.plugin_name}】搜索 {keyword}，找到 {len(movies)} 个结果")
@@ -132,47 +206,66 @@ class JavBusExtend(_PluginBase):
             if not movie_id:
                 continue
 
-            # 获取详情（含 gid/uc）
-            self._rate_limit()
-            detail = self._api_get(f"/api/movies/{movie_id}")
-            if not detail or 'gid' not in detail:
+            magnets = self._fetch_magnets_for_movie(movie_id)
+            if not magnets:
                 continue
 
-            # 获取磁力链接
-            self._rate_limit()
-            magnets_data = self._api_get(
-                f"/api/magnets/{movie_id}?gid={detail['gid']}&uc={detail['uc']}"
-            )
-            if not magnets_data:
-                continue
+            for m in magnets:
+                item = self._magnet_to_torrent_dict(movie_id, m)
+                if item:
+                    all_torrents.append(item)
 
-            magnets_list = magnets_data if isinstance(magnets_data, list) else magnets_data.get('magnets', [])
-            for m in magnets_list:
-                magnet = m.get('link') or m.get('magnet', '')
-                if not magnet:
-                    continue
-                name = m.get('title') or m.get('name', '')
-                size_str = m.get('size', '') or ''
-                date = m.get('shareDate') or m.get('date', '')
-
-                all_torrents.append(TorrentInfo(
-                    title=f"{name} [{size_str}]" if size_str else name,
-                    enclosure=magnet,
-                    size=self._parse_size(size_str),
-                    description=f"{movie_id} | {name} | {size_str} | {date}",
-                    site=site.get("id", 0),
-                    site_name=site.get("name", "JavBus"),
-                    site_cookie=site.get("cookie"),
-                    site_ua=site.get("ua"),
-                    site_proxy=site.get("proxy"),
-                    site_order=site.get("pri"),
-                    site_downloader=site.get("downloader"),
-                ))
-
-            logger.info(f"【{self.plugin_name}】{movie_id}: 获取到 {len(magnets_list)} 个磁力链接")
+            logger.info(f"【{self.plugin_name}】{movie_id}: 获取到 {len(magnets)} 个磁力链接")
 
         logger.info(f"【{self.plugin_name}】搜索完成，共 {len(all_torrents)} 个磁力链接")
         return all_torrents
+
+    # ==================== 浏览/刷新接口 ====================
+
+    def refresh_torrents(self, site: dict,
+                         keyword: Optional[str] = None,
+                         cat: Optional[str] = None,
+                         page: Optional[int] = 0) -> List[dict]:
+        """
+        刷新 JavBus 最新磁力资源（browse 首页列表模式）
+        使用 /api/movies?page=N&magnet=exist 获取有磁力的最新影片列表
+        """
+        if self._javbus_domain not in str(site.get('domain', '')).lower():
+            return []
+
+        page_num = (page or 0) + 1
+        result = self._api_get(f"/api/movies?page={page_num}&magnet=exist")
+        if not result:
+            return []
+
+        movies = result.get('movies', []) if isinstance(result, dict) else result
+        if not movies:
+            logger.info(f"【{self.plugin_name}】刷新第 {page_num} 页，未找到结果")
+            return []
+
+        logger.info(f"【{self.plugin_name}】刷新第 {page_num} 页，获取到 {len(movies)} 个影片")
+
+        all_torrents = []
+        for movie in movies[:20]:
+            movie_id = movie.get('id', '')
+            if not movie_id:
+                continue
+
+            magnets = self._fetch_magnets_for_movie(movie_id)
+            if not magnets:
+                continue
+
+            for m in magnets:
+                item = self._magnet_to_torrent_dict(movie_id, m)
+                if item:
+                    all_torrents.append(item)
+
+            logger.debug(f"【{self.plugin_name}】{movie_id}: 获取到 {len(magnets)} 个磁力链接")
+
+        logger.info(f"【{self.plugin_name}】刷新完成，共 {len(all_torrents)} 个磁力链接")
+        return all_torrents
+
+    # ==================== 插件标准接口 ====================
 
     def get_state(self) -> bool:
         return self._enabled
@@ -257,73 +350,6 @@ class JavBusExtend(_PluginBase):
 
     def stop_service(self):
         pass
-
-    def refresh_torrents(self, site: dict,
-                            keyword: Optional[str] = None,
-                            cat: Optional[str] = None,
-                            page: Optional[int] = 0) -> List[TorrentInfo]:
-        """
-        刷新 JavBus 最新磁力资源（供订阅 match 缓存使用）
-        JavBus 无 RSS/首页列表，使用热门关键词模拟刷新
-        """
-        if self._javbus_domain not in str(site.get('domain', '')).lower():
-            return []
-
-        # JavBus 无传统首页列表，使用 placeholder 搜索获取最新资源
-        # 使用空或热门关键词获取最新内容
-        result = self._api_get("/api/movies/search?keyword=a")
-        if not result:
-            return []
-
-        movies = result.get('movies', []) if isinstance(result, dict) else result
-        if not movies:
-            return []
-
-        logger.info(f"【{self.plugin_name}】刷新获取到 {len(movies)} 个最新条目")
-
-        all_torrents = []
-        for movie in movies[:10]:
-            movie_id = movie.get('id', '')
-            if not movie_id:
-                continue
-
-            self._rate_limit()
-            detail = self._api_get(f"/api/movies/{movie_id}")
-            if not detail or 'gid' not in detail:
-                continue
-
-            self._rate_limit()
-            magnets_data = self._api_get(
-                f"/api/magnets/{movie_id}?gid={detail['gid']}&uc={detail['uc']}"
-            )
-            if not magnets_data:
-                continue
-
-            magnets_list = magnets_data if isinstance(magnets_data, list) else magnets_data.get('magnets', [])
-            for m in magnets_list:
-                magnet = m.get('link') or m.get('magnet', '')
-                if not magnet:
-                    continue
-                name = m.get('title') or m.get('name', '')
-                size_str = m.get('size', '') or ''
-                date = m.get('shareDate') or m.get('date', '')
-
-                all_torrents.append(TorrentInfo(
-                    title=f"{name} [{size_str}]" if size_str else name,
-                    enclosure=magnet,
-                    size=self._parse_size(size_str),
-                    description=f"{movie_id} | {name} | {size_str} | {date}",
-                    site=site.get("id", 0),
-                    site_name=site.get("name", "JavBus"),
-                    site_cookie=site.get("cookie"),
-                    site_ua=site.get("ua"),
-                    site_proxy=site.get("proxy"),
-                    site_order=site.get("pri"),
-                    site_downloader=site.get("downloader"),
-                ))
-
-        logger.info(f"【{self.plugin_name}】刷新完成，共 {len(all_torrents)} 个磁力链接")
-        return all_torrents
 
     def get_module(self) -> Dict[str, Any]:
         """

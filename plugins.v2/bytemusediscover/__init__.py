@@ -223,6 +223,7 @@ class ByteMuseDiscover(_PluginBase):
                 "methods": ["GET"],
                 "summary": "ByteMuse演员阵容",
                 "description": "获取演员阵容（List[MediaPerson]格式）",
+                "allow_anonymous": True,
             },
             {
                 "path": "/bytemuse_similar/{mediaid}",
@@ -230,6 +231,7 @@ class ByteMuseDiscover(_PluginBase):
                 "methods": ["GET"],
                 "summary": "ByteMuse类似作品",
                 "description": "获取同演员作品（List[MediaInfo]格式）",
+                "allow_anonymous": True,
             },
             {
                 "path": "/bytemuse_recommend/{mediaid}",
@@ -237,6 +239,7 @@ class ByteMuseDiscover(_PluginBase):
                 "methods": ["GET"],
                 "summary": "ByteMuse推荐",
                 "description": "获取热门推荐作品（List[MediaInfo]格式）",
+                "allow_anonymous": True,
             },
             {
                 "path": "/bytemuse_detail/{mediaid}",
@@ -773,8 +776,8 @@ class ByteMuseDiscover(_PluginBase):
                 import datetime as _dt
                 now = _dt.date.today()
                 rank_days = {
-                    "daily": 1, "weekly": 7, "monthly": 30, "yearly": 365
-                }.get(rank_type, 1)
+                    "daily": 3, "weekly": 7, "monthly": 30, "yearly": 365
+                }.get(rank_type, 3)
                 cutoff = now - _dt.timedelta(days=rank_days)
                 # 拉取多页以获取足够的时间范围内数据
                 all_movies = []
@@ -806,7 +809,7 @@ class ByteMuseDiscover(_PluginBase):
                 mi = schemas.MediaInfo(
                     type="电影",
                     title=f"{mid} {mtitle}".strip() if mid not in mtitle else mtitle,
-                    mediaid_prefix="javbus_search" if mode == "search" else "javbus_ranking",
+                    mediaid_prefix="metatube_search",
                     media_id=mid,
                     poster_path=self._proxy_image_url(mimg) if mimg else '',
                     year=mdate,
@@ -1129,12 +1132,14 @@ class ByteMuseDiscover(_PluginBase):
             if not isinstance(actor, dict) or not actor.get("name"):
                 continue
             photo = actor.get("photo", "")
+            proxy_url = self._proxy_image_url(photo) if photo else ""
             credits.append({
                 "id": idx + 1,
                 "name": actor.get("name", ""),
                 "character": actor.get("role", ""),
-                "profile_path": self._proxy_image_url(photo) if photo else "",
-                "source": "bytemuse",
+                "profile_path": "",
+                "avatar": proxy_url,
+                "source": "douban",
                 "images": {},
                 "type": 1,
             })

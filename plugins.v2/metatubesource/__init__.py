@@ -23,11 +23,13 @@ from app.core.config import settings
 from .metatube_api import MetatubeApiClient
 from .theporndb_api import ThePornDBApiClient
 from .bytemuse_api import ByteMuseApiClient
+from .javbus_api import JavBusApiClient
 from .schema import (
     MetatubeMovie, MetatubeMovieDetail, LogEntry,
     ThePornDBScene, ThePornDBSceneDetail,
     ThePornDBJAVDetail, ThePornDBJAVScene,
-    ByteMuseMovie, ByteMuseSearchResponse
+    ByteMuseMovie, ByteMuseSearchResponse,
+    JavBusMovie, JavBusMovieDetail, JavBusEntity, JavBusSample
 )
 
 
@@ -379,6 +381,10 @@ class MetatubeSource(_PluginBase):
     _bytemuse_username: str = ""  # ByteMuse 登录用户名
     _bytemuse_password: str = ""  # ByteMuse 登录密码
 
+    # JavBus 配置
+    _javbus_enabled: bool = False  # 是否启用 JavBus
+    _javbus_api_url: str = "http://10.0.0.1:8922"  # javbus-api 地址
+
     # JAV 配置
     _jav_number_auto_match: bool = True  # JAV番号自动匹配
 
@@ -389,6 +395,7 @@ class MetatubeSource(_PluginBase):
     _metatube_client: MetatubeApiClient = None
     _theporndb_client: ThePornDBApiClient = None  # ThePornDB 客户端
     _bytemuse_client: ByteMuseApiClient = None  # ByteMuse 客户端
+    _javbus_client: JavBusApiClient = None  # JavBus 客户端
     _original_method: Optional[Callable] = None
     _original_async_method: Optional[Callable[..., Coroutine[Any, Any, Optional[MediaInfo]]]] = None
     _log_entries: deque = None
@@ -536,6 +543,9 @@ class MetatubeSource(_PluginBase):
             self._bytemuse_url = config.get("bytemuse_url") or "http://127.0.0.1:3750"
             self._bytemuse_username = config.get("bytemuse_username") or ""
             self._bytemuse_password = config.get("bytemuse_password") or ""
+            # JavBus 配置
+            self._javbus_enabled = bool(config.get("javbus_enabled") or False)
+            self._javbus_api_url = config.get("javbus_api_url") or "http://10.0.0.1:8922"
             # JAV 配置
             self._jav_number_auto_match = bool(config.get("jav_number_auto_match") or True)
             # 搜索数据源配置
@@ -578,6 +588,12 @@ class MetatubeSource(_PluginBase):
             base_url=self._bytemuse_url,
             username=self._bytemuse_username,
             password=self._bytemuse_password,
+            timeout=self._timeout
+        )
+
+        # 初始化 JavBus 客户端
+        self._javbus_client = JavBusApiClient(
+            base_url=self._javbus_api_url,
             timeout=self._timeout
         )
 
@@ -905,6 +921,20 @@ class MetatubeSource(_PluginBase):
                                     {
                                         "component": "VSwitch",
                                         "props": {
+                                            "model": "javbus_enabled",
+                                            "label": "启用JavBus",
+                                            "hint": "通过javbus-api识别番号媒体信息"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
                                             "model": "clear_logs_flag",
                                             "label": "清空识别记录",
                                             "hint": "保存后清空所有识别日志记录"
@@ -1020,6 +1050,27 @@ class MetatubeSource(_PluginBase):
                                             "hint": "ByteMuse登录密码",
                                             "type": "password",
                                             "prepend-icon": "mdi-lock"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "javbus_api_url",
+                                            "label": "JavBus API地址",
+                                            "placeholder": "http://10.0.0.1:8922",
+                                            "hint": "javbus-api服务地址（ovnrain/javbus-api）",
+                                            "prepend-icon": "mdi-server-network"
                                         }
                                     }
                                 ]
@@ -1398,6 +1449,8 @@ class MetatubeSource(_PluginBase):
             "theporndb_api_token": "",
             "bytemuse_enabled": False,
             "bytemuse_url": "http://127.0.0.1:3750",
+            "javbus_enabled": False,
+            "javbus_api_url": "http://10.0.0.1:8922",
             "jav_number_auto_match": True
         }
 
@@ -1888,6 +1941,8 @@ class MetatubeSource(_PluginBase):
             "bytemuse_url": self._bytemuse_url,
             "bytemuse_username": self._bytemuse_username,
             "bytemuse_password": self._bytemuse_password,
+            "javbus_enabled": self._javbus_enabled,
+            "javbus_api_url": self._javbus_api_url,
             "jav_number_auto_match": self._jav_number_auto_match,
             "search_enabled": self._search_enabled,
             "skip_small_files": self._skip_small_files,
@@ -2966,6 +3021,156 @@ class MetatubeSource(_PluginBase):
             logger.error(f"ByteMuse: 识别异常 - {str(e)}")
             return None
 
+    def _convert_javbus_to_mediainfo(self, detail: JavBusMovieDetail) -> MediaInfo:
+        """将 JavBus 详情结果转换为 MediaInfo"""
+        mediainfo = MediaInfo()
+        mediainfo.source = 'javbus'
+        mediainfo.type = MediaType.MOVIE
+
+        # 解析年份
+        year = ""
+        if detail.date:
+            try:
+                year = detail.date[:4]
+            except Exception:
+                pass
+
+        # 处理演员列表
+        actors = []
+        if detail.stars:
+            actors = [star.name for star in detail.stars if star.name]
+
+        # 制作商/发行商
+        studio = detail.producer.name if detail.producer else ""
+        label = detail.publisher.name if detail.publisher else ""
+        series = detail.series.name if detail.series else ""
+
+        # 构建优化标题
+        optimized_title = self._build_optimized_title(
+            number=detail.id,
+            actors=actors,
+            studio=studio,
+            label=label,
+            year=year,
+            series=series,
+            original_title=detail.title
+        )
+
+        # 基础信息
+        mediainfo.title = optimized_title
+        mediainfo.original_title = detail.id
+
+        # 年份和日期
+        if detail.date:
+            mediainfo.year = year
+            mediainfo.release_date = detail.date
+
+        # 番号作为标识
+        mediainfo.imdb_id = detail.id
+
+        # 封面和海报
+        if detail.img:
+            mediainfo.poster_path = detail.img
+            mediainfo.backdrop_path = detail.img
+
+        # 演员
+        if actors:
+            mediainfo.actor = [{"name": name} for name in actors]
+
+        # 概要
+        if detail.info:
+            mediainfo.overview = detail.info
+
+        # 导演
+        if detail.director and detail.director.name:
+            mediainfo.director = [{"name": detail.director.name}]
+
+        # 类型标签
+        if detail.genres:
+            mediainfo.genres = [{"id": g.id, "name": g.name} for g in detail.genres if g.name]
+
+        # 时长
+        if detail.videoLength:
+            mediainfo.runtime = detail.videoLength
+
+        # 制作商信息
+        if studio:
+            mediainfo.studio = studio
+
+        # 预览图 (samples)
+        if detail.samples:
+            image_urls = [s.src for s in detail.samples if s.src]
+            if image_urls and hasattr(mediainfo, 'images'):
+                mediainfo.images = image_urls
+
+        return mediainfo
+
+    def _recognize_with_javbus(self, title: str) -> Optional[MediaInfo]:
+        """
+        使用 JavBus API 识别媒体
+
+        :param title: 搜索标题/番号
+        :return: 识别结果
+        """
+        logger.info(f"JavBus: 正在识别 '{title}' ...")
+
+        try:
+            # 搜索并获取详情
+            detail = self._javbus_client.search_with_detail(title)
+            if not detail:
+                logger.debug(f"JavBus: '{title}' 未找到匹配结果")
+                return None
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_javbus_to_mediainfo(detail)
+
+            # 固定分类为日系
+            category = self._build_category(self.SUBCATEGORY_JAPANESE)
+            mediainfo.set_category(category)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         "来源: JavBus", category=category)
+            logger.info(f"JavBus: 识别成功 - {title} -> {mediainfo.title} (分类: {category})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"JavBus: 识别异常 - {str(e)}")
+            return None
+
+    async def _async_recognize_with_javbus(self, title: str) -> Optional[MediaInfo]:
+        """
+        异步使用 JavBus API 识别媒体
+
+        :param title: 搜索标题/番号
+        :return: 识别结果
+        """
+        logger.info(f"JavBus: 正在异步识别 '{title}' ...")
+
+        try:
+            # 异步搜索并获取详情
+            detail = await self._javbus_client.async_search_with_detail(title)
+            if not detail:
+                logger.debug(f"JavBus: '{title}' 未找到匹配结果")
+                return None
+
+            # 转换为 MediaInfo
+            mediainfo = self._convert_javbus_to_mediainfo(detail)
+
+            # 固定分类为日系
+            category = self._build_category(self.SUBCATEGORY_JAPANESE)
+            mediainfo.set_category(category)
+
+            self._add_log(title, f"{mediainfo.title} ({mediainfo.year})", "success",
+                         "来源: JavBus", category=category)
+            logger.info(f"JavBus: 异步识别成功 - {title} -> {mediainfo.title} (分类: {category})")
+
+            return mediainfo
+
+        except Exception as e:
+            logger.error(f"JavBus: 异步识别异常 - {str(e)}")
+            return None
+
     def _recognize_with_theporndb(self, title: str) -> Optional[MediaInfo]:
         """
         使用 ThePornDB 识别媒体
@@ -3312,14 +3517,20 @@ class MetatubeSource(_PluginBase):
             if result:
                 return result
 
-        # 4b. ThePornDB JAV (JAV format)
+        # 4b. JavBus
+        if self._javbus_enabled:
+            result = self._call_recognize("javbus", number, title, is_async)
+            if result:
+                return result
+
+        # 4c. ThePornDB JAV (JAV format)
         is_jav = self._is_jav_number(number)
         if is_jav and self._theporndb_enabled and self._theporndb_api_token:
             result = self._call_recognize("theporndb_jav", number, title, is_async)
             if result:
                 return result
 
-        # 4c. ThePornDB (Western)
+        # 4d. ThePornDB (Western)
         if detected_category == self.SUBCATEGORY_WESTERN and self._theporndb_enabled and self._theporndb_api_token:
             result = self._call_recognize("theporndb", title, title, is_async)
             if result:
@@ -3371,6 +3582,11 @@ class MetatubeSource(_PluginBase):
             if result:
                 return result
 
+        if self._javbus_enabled:
+            result = await self._call_recognize_async("javbus", number, title)
+            if result:
+                return result
+
         is_jav = self._is_jav_number(number)
         if is_jav and self._theporndb_enabled and self._theporndb_api_token:
             result = await self._call_recognize_async("theporndb_jav", number, title)
@@ -3403,6 +3619,8 @@ class MetatubeSource(_PluginBase):
         try:
             if source == "bytemuse":
                 return self._recognize_with_bytemuse(query)
+            elif source == "javbus":
+                return self._recognize_with_javbus(query)
             elif source == "theporndb_jav":
                 return self._recognize_with_theporndb_jav(query)
             elif source == "theporndb":
@@ -3421,6 +3639,8 @@ class MetatubeSource(_PluginBase):
         try:
             if source == "bytemuse":
                 return await self._async_recognize_with_bytemuse(query)
+            elif source == "javbus":
+                return await self._async_recognize_with_javbus(query)
             elif source == "theporndb_jav":
                 return await self._async_recognize_with_theporndb_jav(query)
             elif source == "theporndb":

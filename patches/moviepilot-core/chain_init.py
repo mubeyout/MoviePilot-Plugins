@@ -390,6 +390,7 @@ class ChainBase(metaclass=ABCMeta):
             bangumiid: Optional[int] = None,
             episode_group: Optional[str] = None,
             cache: bool = True,
+            share_meta: MetaBase = None,
     ) -> Optional[MediaInfo]:
         """
         识别媒体信息，不含Fanart图片
@@ -400,6 +401,7 @@ class ChainBase(metaclass=ABCMeta):
         :param bangumiid: BangumiID
         :param episode_group: 剧集组
         :param cache:    是否使用缓存
+        :param share_meta: 分享元数据
         :return: 识别的媒体信息，包括剧集信息
         """
         # 识别用名中含指定信息情形
@@ -434,6 +436,7 @@ class ChainBase(metaclass=ABCMeta):
             bangumiid: Optional[int] = None,
             episode_group: Optional[str] = None,
             cache: bool = True,
+            share_meta: MetaBase = None,
     ) -> Optional[MediaInfo]:
         """
         识别媒体信息，不含Fanart图片（异步版本）
@@ -444,6 +447,7 @@ class ChainBase(metaclass=ABCMeta):
         :param bangumiid: BangumiID
         :param episode_group: 剧集组
         :param cache:    是否使用缓存
+        :param share_meta: 分享元数据
         :return: 识别的媒体信息，包括剧集信息
         """
         # 识别用名中含指定信息情形
@@ -955,6 +959,7 @@ class ChainBase(metaclass=ABCMeta):
             episodes_info: List[TmdbEpisode] = None,
             source_oper: Callable = None,
             target_oper: Callable = None,
+            preview: Optional[bool] = False,
     ) -> Optional[TransferInfo]:
         """
         文件转移
@@ -971,6 +976,7 @@ class ChainBase(metaclass=ABCMeta):
         :param episodes_info: 当前季的全部集信息
         :param source_oper:  源存储操作类
         :param target_oper:  目标存储操作类
+        :param preview:  是否预览模式
         :return: {path, target_path, message}
         """
         return self.run_module(
@@ -988,6 +994,7 @@ class ChainBase(metaclass=ABCMeta):
             episodes_info=episodes_info,
             source_oper=source_oper,
             target_oper=target_oper,
+            preview=preview,
         )
 
     def transfer_completed(self, hashs: str, downloader: Optional[str] = None) -> None:

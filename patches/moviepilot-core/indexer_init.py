@@ -19,6 +19,15 @@ from app.modules.indexer.spider.yema import YemaSpider
 from app.schemas import SiteUserData
 from app.schemas.types import MediaType, ModuleType, OtherModulesType
 from app.utils.string import StringUtils
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+_executor = ThreadPoolExecutor(max_workers=10)
+
+
+def _run_sync(func, *args, **kwargs):
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(_executor, lambda: func(*args, **kwargs))
 
 
 class IndexerModule(_ModuleBase):
@@ -222,6 +231,18 @@ class IndexerModule(_ModuleBase):
                     cat=cat,
                     page=page
                 )
+            elif site.get('name') == "JavBus" or 'javbus' in str(site.get('domain', '')).lower():
+                try:
+                    from app.plugins.javbusextend import JavBusExtend
+                    _jb = JavBusExtend()
+                    _jb_results = _jb.search_torrents(
+                        site=site, keyword=search_word, mtype=mtype,
+                        page=page, search_type=search_type
+                    )
+                    if _jb_results:
+                        return _jb_results
+                except Exception as e:
+                    logger.warning(f"JavBus 搜索异常: {e}")
             else:
                 error_flag, result = self.__spider_search(
                     search_word=search_word,
@@ -320,6 +341,19 @@ class IndexerModule(_ModuleBase):
                     cat=cat,
                     page=page
                 )
+            elif site.get('name') == "JavBus" or 'javbus' in str(site.get('domain', '')).lower():
+                try:
+                    from app.plugins.javbusextend import JavBusExtend
+                    _jb = JavBusExtend()
+                    _jb_results = await _run_sync(
+                        _jb.search_torrents,
+                        site=site, keyword=search_word, mtype=mtype,
+                        page=page, search_type=search_type
+                    )
+                    if _jb_results:
+                        return _jb_results
+                except Exception as e:
+                    logger.warning(f"JavBus 搜索异常: {e}")
             else:
                 error_flag, result = await self.__async_spider_search(
                     search_word=search_word,

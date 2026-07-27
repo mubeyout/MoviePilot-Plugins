@@ -70,6 +70,7 @@ class MetatubeApiClient:
     )
 
     # 番号正则表达式列表（按优先级排序，更具体的规则在前）
+    # 重要：高特异性模式必须排在通用 [A-Z]+\d+ 模式之前，否则会误匹配
     NUMBER_PATTERNS = [
         # ===== FC2 系列（最高优先级，防止被通用规则误匹配）=====
         # FC2格式: FC2-PPV-1234567, FC2-1234567, FC2PPV-1234567
@@ -83,9 +84,16 @@ class MetatubeApiClient:
         # Tokyo Hot: n1234, k1234, k12345, K1234, KD1234
         r'([nNK]|K|KD)[-_]?(\d{4,5})',
 
-        # ===== 主流标准格式 =====
-        # 标准格式: ABC-123, ABC123, ABC-0123
-        r'([A-Z]{2,10})[-_]?(\d{2,5})',
+        # ===== 日期编号格式（Carib/1Pondo 等，必须在通用模式之前匹配）=====
+        # Carib 完整文件名: 010111-577-carib-whole2048, 022213-271-carib-whole2048
+        # 匹配优先级: 文件名中的 日期(6位)-编号(3位) 必须在 WHOLE2048 之前被提取
+        r'(\d{6})[-_](\d{3})(?:[-_](?:CARIB|CARIBPR|CARIBBEANCOM|1PON|1PONDO|PON))?',
+        # 1Pondo 下划线格式: 021011_027-1pon-divx
+        r'(\d{6})_(\d{3})',
+
+        # ===== Caribbean 带站点前缀格式 =====
+        # carib-010111-577, caribbeancom-123456-123
+        r'(?:CARIB|CARIBPR|CARIBBEANCOM)[-_]?(\d{6})[-_]?(\d{3})',
 
         # ===== 素人/单体系列 =====
         # 10musume: 10musume-1234, 10mu-123
@@ -95,25 +103,19 @@ class MetatubeApiClient:
         # XXX-AV: xxx-av-12345, xxxav-12345
         r'(XXX[-_]?AV|AV)[-_]?(\d{5})',
 
-        # ===== 网站系列 =====
-        # Caribbean系列: carib-123456-123, caribpr-123456-123
-        r'(CARIB|CARIBPR|CARIBBEANCOM)[-_]?(\d{6})[-_]?(\d{3})',
-        # 1Pondo: 1pondo-123456_123, 1p-123456_123
-        r'(\d{6})[_-](\d{3})',
-        # Sky High: s2m-123, sky-123, sky-252
-        r'(S2M|SKY|SKYHIGH)[-_]?(\d{3,4})',
-        # Red Hot: red-123
-        r'(RED|REDHOT)[-_]?(\d{3})',
+        # ===== Sky High / Red Hot 系列 =====
+        # Sky High: s2m-123, sky-029, sky-252, SKYHD-029
+        r'(S2M|SKY|SKYHIGH|SKYHD)[-_]?(\d{3,4})',
+        # Red Hot: red-123 (用 \b 防止匹配 PRED 等)
+        r'\b(RED|REDHOT)\b[-_]?(\d{3})',
 
         # ===== 数字编号系列 =====
         # H系列: H0930-123, H4610-123
         r'(H\d{4})[-_]?(\d{3})',
         # C系列: C0930-123
         r'(C\d{4})[-_]?(\d{3})',
-        # 纯数字系列: 123456-123, 123456_123
-        r'(\d{6})[-_](\d{3})',
 
-        # ===== 特殊厂商 =====
+        # ===== 特殊厂商（比通用格式更具体，优先匹配）=====
         # Kin8tengoku: kin8-123, eng-123
         r'(KIN8|TENGOKU|ENG)[-_]?(\d{3,5})',
         # Gold系列: gold-123
@@ -132,10 +134,14 @@ class MetatubeApiClient:
         r'(EBOD|EBODY)[-_]?(\d{3,4})',
         # WanZ: wanz-123
         r'(WANZ|WAAA)[-_]?(\d{3,4})',
+        # VR系列: vr-123, 3dvr-123, mdvr-433
+        r'(MDVR|VR|3DVR|VRVR)[-_]?(\d{3,5})',
 
-        # ===== VR系列 =====
-        # VR: vr-123, 3dvr-123
-        r'(VR|3DVR|VRVR)[-_]?(\d{3,5})',
+        # ===== 主流标准格式（降级：放在特定厂商之后，减少误匹配）=====
+        # 标准格式: ABC-123, ABC123, ABC-0123
+        # 注意：此模式较宽泛，会匹配 SSIS-001 / IPX-123 等，但也可能匹配到文件名中的非番号部分
+        # 因此必须放在所有高特异性模式之后
+        r'([A-Z]{2,10})[-_]?(\d{2,5})',
 
         # ===== 欧美系列 =====
         # RealityKings: rk-12345
@@ -152,7 +158,7 @@ class MetatubeApiClient:
         # ===== 复合格式(后置匹配) =====
         # 包含字母数字组合的三段式: ABC-123-DEF, ABC123-DEF
         r'([A-Z]{2,6})[-_]?(\d{3,5})[-_]?([A-Z]{0,4})',
-        # 特殊数字格式: 062123-123
+        # 纯数字系列: 123456-123, 123456_123 (兜底)
         r'(\d{5,6})[-_](\d{3})',
     ]
 
@@ -438,3 +444,4 @@ class MetatubeApiClient:
         except Exception as e:
             logger.debug(f"Metatube 连接测试失败: {str(e)}")
             return False
+

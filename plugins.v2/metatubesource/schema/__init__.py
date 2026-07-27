@@ -257,6 +257,80 @@ class ThePornDBDetailResponse(BaseModel):
     data: Optional[ThePornDBSceneDetail] = None
 
 
+# ==================== JavBus 数据模型 ====================
+
+class JavBusEntity(BaseModel):
+    """JavBus 实体（导演/制作商/发行商/系列/类型/演员）"""
+    id: str = Field(default="", description="ID")
+    name: str = Field(default="", description="名称")
+
+    class Config:
+        populate_by_name = True
+
+
+class JavBusSample(BaseModel):
+    """JavBus 预览图"""
+    id: str = Field(default="", description="图片ID")
+    alt: str = Field(default="", description="替代文本")
+    src: str = Field(default="", description="图片URL")
+    thumbnail: str = Field(default="", description="缩略图URL")
+
+    class Config:
+        populate_by_name = True
+
+
+class JavBusImageSize(BaseModel):
+    """JavBus 图片尺寸"""
+    width: int = Field(default=0, description="宽度")
+    height: int = Field(default=0, description="高度")
+
+    class Config:
+        populate_by_name = True
+
+
+class JavBusMovie(BaseModel):
+    """JavBus 搜索结果"""
+    id: str = Field(default="", description="番号")
+    title: str = Field(default="", description="标题")
+    img: str = Field(default="", description="封面URL")
+    date: str = Field(default="", description="发布日期")
+    tags: List[str] = Field(default_factory=list, description="标签")
+
+    class Config:
+        populate_by_name = True
+
+
+class JavBusSearchResponse(BaseModel):
+    """JavBus 搜索响应"""
+    movies: List[JavBusMovie] = Field(default_factory=list, description="搜索结果")
+
+    class Config:
+        populate_by_name = True
+
+
+class JavBusMovieDetail(BaseModel):
+    """JavBus 电影详情"""
+    id: str = Field(default="", description="番号")
+    title: str = Field(default="", description="标题")
+    img: str = Field(default="", description="封面URL")
+    imageSize: Optional[JavBusImageSize] = Field(default=None, description="图片尺寸")
+    date: str = Field(default="", description="发布日期")
+    videoLength: Optional[int] = Field(default=None, description="时长(分钟)")
+    director: Optional[JavBusEntity] = Field(default=None, description="导演")
+    producer: Optional[JavBusEntity] = Field(default=None, description="制作商")
+    publisher: Optional[JavBusEntity] = Field(default=None, description="发行商")
+    series: Optional[JavBusEntity] = Field(default=None, description="系列")
+    genres: List[JavBusEntity] = Field(default_factory=list, description="类型标签")
+    stars: List[JavBusEntity] = Field(default_factory=list, description="演员列表")
+    samples: List[JavBusSample] = Field(default_factory=list, description="预览图列表")
+    info: str = Field(default="", description="简介")
+    gid: str = Field(default="", description="JavBus GID（用于磁力接口）")
+    uc: str = Field(default="", description="JavBus UC（用于磁力接口）")
+
+    class Config:
+        populate_by_name = True
+
+
 # ==================== ThePornDB JAV 数据模型 ====================
 
 class ThePornDBJAVPerformerExtra(BaseModel):

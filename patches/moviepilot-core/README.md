@@ -3,7 +3,7 @@
 本目录包含 MoviePilot 的核心补丁文件，用于实现自定义功能（ByteMuse 探索详情、成人内容搜索、前端增强等）。
 
 > **版本对应**: MoviePilot v2.10.2 (`jxxghp/moviepilot:2.10.2`)
-> **更新日期**: 2026-07-14
+> **更新日期**: 2026-07-27
 
 ---
 
@@ -126,7 +126,42 @@
 
 **重要**: 前端文件（stills-inject.js、inject_stills.py）必须放在宿主机 `/config` 挂载目录下，因为 docker-compose 的 volume 挂载会遮盖镜像内 COPY 的文件。
 
-### 13. ByteMuseDiscover 插件增强
+### 13. `subscribe_oper.py` → `/app/app/db/subscribe_oper.py` (2026-07-27)
+
+**作用**: 修复成人内容（无 tmdbid/doubanid）添加订阅时 500 错误。
+
+**Bug**: `SubscribeOper.async_add` 创建记录后调用 `async_exists` 重新查询，但 tmdbid 和 doubanid 都为 None 时返回 None，导致 `subscribe.id` 抛 `AttributeError`。第一次 patch 用 `async_create` 返回对象导致 `DetachedInstanceError`（session 关闭后对象 detached）。
+
+**修复**: 使用独立 `AsyncSessionFactory` session 创建记录，`flush` 后取 `id`，再 `commit`：
+```python
+async with AsyncSessionFactory() as session:
+    subscribe = Subscribe(**kwargs)
+    session.add(subscribe)
+    await session.flush()
+    sub_id = subscribe.id
+    await session.commit()
+return sub_id, "新增订阅成功"
+```
+
+**挂载**: entrypoint.sh 中 cp 或 docker-compose volume 挂载
+
+---
+
+### 14. `chain_init.py` 补充参数 (2026-07-27)
+
+**新增两处参数透传**:
+
+1. `recognize_media()` / `async_recognize_media()` — 添加 `share_meta: MetaBase = None` 参数
+   - `media.py` 调用时传了 `share_meta` 但 `ChainBase` 不接受，导致 `TypeError`
+
+2. `transfer()` — 添加 `preview: Optional[bool] = False` 参数并透传给 `run_module`
+   - `transfer.py` 的 `__handle_transfer` 调用 `self.transfer(preview=task.preview)` 但签名不接受
+
+**挂载**: docker-compose.yml 中直接挂载到容器（`ro`）
+
+---
+
+### 15. ByteMuseDiscover 插件增强
 
 **新增匿名 API**: `/api/v1/plugin/ByteMuseDiscover/bytemuse_detail/{mediaid}`（`allow_anonymous: True`）
 
