@@ -213,7 +213,8 @@ class MubeyClashRP(_PluginBase):
         return "vue", "dist/assets"
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        return [], {}
+        model = self.state.config.model_dump() if self.state and self.state.config else {}
+        return [], model
 
     def get_dashboard_meta(self) -> Optional[List[Dict[str, str]]]:
         if not self.state or not self.state.config:
