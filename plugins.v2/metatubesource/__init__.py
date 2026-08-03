@@ -443,8 +443,10 @@ class MetatubeSource(_PluginBase):
                     return None
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
+                _filtered_kwargs = {k: v for k, v in kwargs.items()
+                                   if k in ("share_meta",)}
                 result = plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                          episode_group, cache, **kwargs)
+                                                          episode_group, cache, **_filtered_kwargs)
                 if result:
                     return result
 
@@ -453,8 +455,10 @@ class MetatubeSource(_PluginBase):
                 return plugin_instance.recognize_media(meta, mtype)
 
             # 插件未启用，直接调用原始方法
+            _filtered_kwargs = {k: v for k, v in kwargs.items()
+                               if k in ("share_meta",)}
             return plugin_instance._original_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                    episode_group, cache, **kwargs)
+                                                    episode_group, cache, **_filtered_kwargs)
 
         async def patched_async_recognize_media(chain_self, meta: MetaBase = None,
                                                 mtype: Optional[MediaType] = None,
@@ -487,8 +491,10 @@ class MetatubeSource(_PluginBase):
                     return None
 
                 # 2. 不匹配关键词，交由系统 IMDB 识别
+                _filtered_kwargs = {k: v for k, v in kwargs.items()
+                                   if k in ("share_meta",)}
                 result = await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                      episode_group, cache, **kwargs)
+                                                                      episode_group, cache, **_filtered_kwargs)
                 if result:
                     return result
 
@@ -497,8 +503,10 @@ class MetatubeSource(_PluginBase):
                 return await plugin_instance.async_recognize_media(meta, mtype)
 
             # 插件未启用，直接调用原始方法
+            _filtered_kwargs = {k: v for k, v in kwargs.items()
+                               if k in ("share_meta",)}
             return await plugin_instance._original_async_method(chain_self, meta, mtype, tmdbid, doubanid, bangumiid,
-                                                                episode_group, cache, **kwargs)
+                                                                episode_group, cache, **_filtered_kwargs)
 
         # 给 patch 函数加唯一标记
         setattr(patched_recognize_media, '_patched_by', id(self))
