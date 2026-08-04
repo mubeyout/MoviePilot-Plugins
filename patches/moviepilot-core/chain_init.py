@@ -391,6 +391,7 @@ class ChainBase(metaclass=ABCMeta):
             episode_group: Optional[str] = None,
             cache: bool = True,
             share_meta: MetaBase = None,
+            **kwargs,
     ) -> Optional[MediaInfo]:
         """
         识别媒体信息，不含Fanart图片
@@ -437,6 +438,7 @@ class ChainBase(metaclass=ABCMeta):
             episode_group: Optional[str] = None,
             cache: bool = True,
             share_meta: MetaBase = None,
+            **kwargs,
     ) -> Optional[MediaInfo]:
         """
         识别媒体信息，不含Fanart图片（异步版本）
