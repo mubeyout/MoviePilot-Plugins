@@ -5,6 +5,7 @@ JavBus 扩展搜索插件
 """
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List, Dict, Any, Tuple, Optional
 from urllib.parse import quote
 
@@ -19,7 +20,7 @@ class JavBusExtend(_PluginBase):
     plugin_name = "JavBusExtend"
     plugin_desc = "扩展检索以支持 JavBus 番号磁力搜索"
     plugin_icon = "JavBus.png"
-    plugin_version = "1.1"
+    plugin_version = "1.2"
     plugin_author = "kai"
     author_url = ""
     plugin_config_prefix = "javbus_extend_"
@@ -246,21 +247,26 @@ class JavBusExtend(_PluginBase):
         logger.info(f"【{self.plugin_name}】刷新第 {page_num} 页，获取到 {len(movies)} 个影片")
 
         all_torrents = []
-        for movie in movies[:20]:
-            movie_id = movie.get('id', '')
-            if not movie_id:
-                continue
+        movie_list = [m for m in movies[:15] if m.get('id')]
 
+        def _process_movie(movie):
+            movie_id = movie['id']
             magnets = self._fetch_magnets_for_movie(movie_id)
-            if not magnets:
-                continue
+            items = []
+            if magnets:
+                for m in magnets:
+                    item = self._magnet_to_torrent_dict(movie_id, m)
+                    if item:
+                        items.append(item)
+            return movie_id, magnets, items
 
-            for m in magnets:
-                item = self._magnet_to_torrent_dict(movie_id, m)
-                if item:
-                    all_torrents.append(item)
-
-            logger.debug(f"【{self.plugin_name}】{movie_id}: 获取到 {len(magnets)} 个磁力链接")
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(_process_movie, m): m for m in movie_list}
+            for future in as_completed(futures):
+                movie_id, magnets, items = future.result()
+                if magnets:
+                    logger.debug(f"【{self.plugin_name}】{movie_id}: 获取到 {len(magnets)} 个磁力链接")
+                all_torrents.extend(items)
 
         logger.info(f"【{self.plugin_name}】刷新完成，共 {len(all_torrents)} 个磁力链接")
         return all_torrents

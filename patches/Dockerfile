@@ -39,4 +39,4 @@ COPY moviepilot-core/nginx_common_patched.conf /config/nginx_common_patched.conf
 # 入口脚本（插件安装 + 前端注入）
 COPY moviepilot-core/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
-RUN pip install "bcrypt<4.1"
+RUN pip install -i https://pypi.tuna.tsinghua.edu.cn/simple "bcrypt<4.1"
