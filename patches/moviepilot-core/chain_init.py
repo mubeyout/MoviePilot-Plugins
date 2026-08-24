@@ -731,21 +731,23 @@ class ChainBase(metaclass=ABCMeta):
         """
         return self.run_module("webhook_parser", body=body, form=form, args=args)
 
-    def search_medias(self, meta: MetaBase) -> Optional[List[MediaInfo]]:
+    def search_medias(self, meta: MetaBase, source: Optional[str] = None) -> Optional[List[MediaInfo]]:
         """
         搜索媒体信息
         :param meta:  识别的元数据
+        :param source:  媒体信息来源
         :reutrn: 媒体信息列表
         """
-        return self.run_module("search_medias", meta=meta)
+        return self.run_module("search_medias", meta=meta, source=source)
 
-    async def async_search_medias(self, meta: MetaBase) -> Optional[List[MediaInfo]]:
+    async def async_search_medias(self, meta: MetaBase, source: Optional[str] = None) -> Optional[List[MediaInfo]]:
         """
         搜索媒体信息（异步版本）
         :param meta:  识别的元数据
+        :param source:  媒体信息来源
         :reutrn: 媒体信息列表
         """
-        return await self.async_run_module("async_search_medias", meta=meta)
+        return await self.async_run_module("async_search_medias", meta=meta, source=source)
 
     def search_persons(self, name: str) -> Optional[List[MediaPerson]]:
         """
