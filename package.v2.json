@@ -1,19 +1,4 @@
 {
-    "anistrm": {
-        "name": "ANiStrm",
-        "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持多种同步模式和季度文件夹模式。",
-        "labels": "整理",
-        "version": "2.7.0",
-        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/anistrm.png",
-        "author": "MUBEY",
-        "level": 2,
-        "v2": true,
-        "history": {
-            "v2.7.0": "新增季度文件夹模式，支持自动季度识别和集数提取，智能重命名为标准媒体库格式",
-            "v2.6.0": "新增多视频格式支持",
-            "v2.4.2": "初始版本，支持从 openani.an-i.workers.dev 获取番剧并创建 strm 文件"
-        }
-    },
     "bytemusediscover": {
         "name": "番号探索服务聚合",
         "description": "基于 ByteMuse API 的探索数据源插件，整合 Byte-Muse（本地Docker）、ThePornDB（在线API）、MetaTube 三大数据源，支持番号搜索和热门榜单功能。",
@@ -91,5 +76,21 @@
     "javbusextend": {
         "version": "1.0.0",
         "description": "JavBus Extend"
+    },
+    "anistrmpro": {
+        "name": "ANiStrmPro",
+        "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持多种同步模式和季度文件夹模式。",
+        "labels": "整理",
+        "version": "2.7.0",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/anistrm.png",
+        "author": "MUBEY",
+        "level": 2,
+        "v2": true,
+        "history": {
+            "v2.8.0": "重命名为 ANiStrmPro，修复日志写入问题",
+            "v2.7.0": "新增季度文件夹模式，支持自动季度识别和集数提取，智能重命名为标准媒体库格式",
+            "v2.6.0": "新增多视频格式支持",
+            "v2.4.2": "初始版本，支持从 openani.an-i.workers.dev 获取番剧并创建 strm 文件"
+        }
     }
 }
