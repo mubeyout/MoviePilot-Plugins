@@ -81,7 +81,7 @@
         "name": "ANiStrmPro",
         "description": "自动获取当季所有番剧并生成strm文件，免去下载，轻松拥有一个番剧媒体库。支持多种同步模式和季度文件夹模式。",
         "labels": "整理",
-        "version": "2.7.0",
+        "version": "3.0.0,
         "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/anistrm.png",
         "author": "MUBEY",
         "level": 2,

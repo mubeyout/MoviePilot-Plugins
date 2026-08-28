@@ -1,3 +1,4 @@
+import asyncio
 import pytz
 from datetime import datetime, timedelta
 from typing import Any, Optional, List, Dict, Tuple
@@ -92,6 +93,24 @@ class MubeyClashRP(_PluginBase):
                     self.state.config.enabled = False
                     self._update_config()
                     logger.warning("由于初始化失败,插件已自动禁用")
+
+        # 配置变更后自动推送到 Mihomo
+        if self.state and self.state.config and self.state.config.enabled:
+            try:
+                import threading, urllib.request
+                def _delayed_push():
+                    import time; time.sleep(10)
+                    try:
+                        apikey = self.state.config.apikey or ''
+                        url = f"http://127.0.0.1:3003/api/v1/plugin/MubeyClashRP/push?apikey={apikey}"
+                        req = urllib.request.Request(url, method="POST")
+                        urllib.request.urlopen(req, timeout=30)
+                        logger.info("配置变更自动推送成功")
+                    except Exception as e:
+                        logger.warning(f"配置变更自动推送失败: {e}")
+                threading.Thread(target=_delayed_push, daemon=True).start()
+            except Exception as e:
+                logger.warning(f"启动自动推送线程失败: {e}")
 
     def upgrade_data(self):
         data_version = self.get_data(DataKey.DATA_VERSION) or "2.0.10"
@@ -334,9 +353,18 @@ class MubeyClashRP(_PluginBase):
     @eventmanager.register(EventType.PluginReload)
     def reload(self, event):
         """
-        响应插件重载事件
+        响应插件重载事件：重新注册 API + 自动推送配置到 Mihomo
         """
         plugin_id = event.event_data.get("plugin_id")
         if plugin_id == self.__class__.__name__:
             logger.info("正在注册 API ...")
             register_plugin_api(plugin_id=plugin_id)
+            # 配置变更后自动推送到 Mihomo
+            if self.state and self.state.config and self.state.config.enabled:
+                async def _auto_push():
+                    try:
+                        success, msg = await self.services.push_config_to_mihomo()
+                        logger.info(f"配置变更自动推送: {msg}")
+                    except Exception as e:
+                        logger.warning(f"配置变更自动推送失败: {e}")
+                asyncio.create_task(_auto_push())

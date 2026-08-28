@@ -459,3 +459,12 @@ class MubeyClashRPApi:
                 listener_task.cancel()
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+    @apis.register(path="/push", methods=["POST"], allow_anonymous=bool(True), summary="推送配置到 Mihomo")
+    async def push_config(self, apikey: str) -> schemas.Response:
+        """将生成的完整 clash 配置推送到 Mihomo 热重载"""
+        _apikey = self.config.apikey or settings.API_TOKEN
+        if not secrets.compare_digest(apikey, _apikey):
+            raise HTTPException(status_code=403, detail="Invalid API Key")
+        success, message = await self.services.push_config_to_mihomo()
+        return schemas.Response(success=success, message=message)

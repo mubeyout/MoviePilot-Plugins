@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import pytz
 import re
 import time
@@ -442,6 +443,93 @@ class MubeyClashRPService:
             proxies = group.proxies
             graph[group.name] = [p for p in proxies if p in group_names]
         return graph
+
+    async def push_config_to_mihomo(self) -> Tuple[bool, str]:
+        """
+        从订阅生成完整配置（节点+代理组+规则+规则集），
+        合并 Mihomo 基础配置（端口/DNS/TUN 等），推送热重载
+        """
+        if not self.state.config.dashboard_url or not self.state.config.dashboard_secret:
+            return False, "Clash API 未配置"
+
+        headers = {"Authorization": f"Bearer {self.state.config.dashboard_secret}"}
+        base_url = self.state.config.dashboard_url
+
+        # 1. 获取 Mihomo 当前基础配置
+        base_resp = await AsyncRequestUtils().get_json(
+            f"{base_url}/configs", headers=headers, timeout=10
+        )
+        if not base_resp:
+            return False, "无法获取 Mihomo 当前配置"
+
+        # 2. 生成插件配置（节点+代理组+规则+规则集）
+        param = ConfigRequest(url="", client_host="127.0.0.1")
+        config = self.build_clash_config(param=param)
+        if not config:
+            return False, "配置生成失败"
+        plugin_dict = config.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+        # 3. 合并：基础配置保留，代理/规则/规则集用插件的
+        merged = {}
+        # 基础运行参数全部从 Mihomo 当前配置保留
+        for k in ("mode", "log-level", "ipv6", "port", "socks-port", "mixed-port",
+                   "redir-port", "tproxy-port", "tun", "dns", "hosts",
+                   "external-controller", "external-ui", "secret",
+                   "unified-delay", "tcp-concurrent", "keep-alive-interval",
+                   "keep-alive-idle", "find-process-mode", "global-client-fingerprint",
+                   "geodata-loader", "geo-auto-update", "geo-update-interval",
+                   "global-ua", "etag-support", "profile",
+                   "external-controller-cors", "allow-lan", "bind-address",
+                   "lan-allowed-ips", "lan-disallowed-ips", "authentication",
+                   "skip-auth-prefixes", "sniff", "sniffing"):
+            if k in base_resp:
+                merged[k] = base_resp[k]
+
+        # 插件的代理/代理组/规则/规则集覆盖
+        for key in ("proxies", "proxy-groups", "proxy-providers", "rules", "rule-providers"):
+            if key in plugin_dict:
+                merged[key] = plugin_dict[key]
+
+        # 4. 写入 config.yaml（持久化，重启不丢）
+        config_path = self._get_mihomo_config_path()
+        yaml_str = yaml.dump(merged, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        try:
+            if config_path:
+                with open(config_path, 'w') as f:
+                    f.write(yaml_str)
+                logger.info(f"配置已写入 {config_path}")
+        except Exception as e:
+            logger.warning(f"写入 config.yaml 失败（不影响热重载）: {e}")
+
+        # 5. 推送到 Mihomo 热重载
+        json_str = json.dumps(merged, ensure_ascii=False).encode()
+        url = f"{base_url}/configs?force=true"
+        resp = await AsyncRequestUtils(
+            content_type="application/json", headers=headers
+        ).put_res(url, data=json_str)
+
+        if resp and resp.status_code == 204:
+            proxies_count = len(merged.get("proxies", []))
+            groups_count = len(merged.get("proxy-groups", []))
+            rules_count = len(merged.get("rules", []))
+            rp_count = len(merged.get("rule-providers", {}))
+            logger.info(f"配置推送成功: {proxies_count}节点 {groups_count}组 {rules_count}规则 {rp_count}规则集")
+            return True, f"推送成功: {proxies_count}节点 {groups_count}代理组 {rules_count}规则"
+        else:
+            status = resp.status_code if resp else "无响应"
+            logger.error(f"配置推送失败: HTTP {status}")
+            return False, f"推送失败: HTTP {status}"
+
+    def _get_mihomo_config_path(self) -> Optional[str]:
+        """查找 Mihomo config.yaml 路径（容器内通过 /mnt 挂载访问宿主机文件）"""
+        candidates = [
+            "/mnt/sda1/Configs/mihomo/config.yaml",
+            "/config/mihomo/config.yaml",
+        ]
+        for p in candidates:
+            if os.path.isdir(os.path.dirname(p)):
+                return p
+        return None
 
     async def fetch_clash_data(self, endpoint: str) -> Dict:
         headers = {"Authorization": f"Bearer {self.state.config.dashboard_secret}"}
