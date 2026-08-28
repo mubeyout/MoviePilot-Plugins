@@ -92,5 +92,18 @@
             "v2.6.0": "新增多视频格式支持",
             "v2.4.2": "初始版本，支持从 openani.an-i.workers.dev 获取番剧并创建 strm 文件"
         }
+    },
+    "mubeyclashrp": {
+        "name": "Mubey Clash RP",
+        "description": "随时为Clash添加一些额外的规则。",
+        "labels": "代理,订阅",
+        "version": "3.0.0",
+        "icon": "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/Mihomo_Meta_A.png",
+        "author": "MUBEY",
+        "level": 1,
+        "v2": true,
+        "history": {
+            "v3.0.0": "配置变更自动推送 Mihomo；插件重载自动重注册 API"
+        }
     }
 }
