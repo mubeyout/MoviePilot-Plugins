@@ -59,7 +59,7 @@ class ANiStrmPro(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/mubeyout/MoviePilot-Plugins/main/icons/anistrm.png"
     # 插件版本
-    plugin_version = "3.0.0"
+    plugin_version = "3.0.1"
     # 插件作者
     plugin_author = "MUBEY"
     # 作者主页
@@ -85,6 +85,8 @@ class ANiStrmPro(_PluginBase):
     _available_seasons: List[str] = []
     # 存储模式: flat(扁平模式) / season_folder(季度文件夹模式)
     _storage_mode = "flat"
+    # 自定义代理（访问被墙数据源 openani 等），如 http://10.0.0.1:7890
+    _proxy = None
 
     # ANi API 请求头（使用 JSON 格式）
     _ani_headers = {
@@ -110,6 +112,7 @@ class ANiStrmPro(_PluginBase):
             self._selected_seasons = config.get("selected_seasons") or []
             self._storageplace = config.get("storageplace")
             self._storage_mode = config.get("storage_mode", "flat")
+            self._proxy = (config.get("proxy") or "").strip() or None
             # 兼容旧配置：如果存在 fulladd=True，转换为 sync_mode="all"
             if config.get("fulladd"):
                 self._sync_mode = "all"
@@ -141,6 +144,12 @@ class ANiStrmPro(_PluginBase):
                 self._scheduler.print_jobs()
                 self._scheduler.start()
 
+    def __proxies(self):
+        """请求代理：优先插件自定义代理，其次全局 PROXY，最后直连"""
+        if self._proxy:
+            return {"http": self._proxy, "https": self._proxy}
+        return settings.PROXY if settings.PROXY else None
+
     def __get_ani_season(self, idx_month: int = None) -> str:
         current_date = datetime.now()
         current_year = current_date.year
@@ -155,7 +164,7 @@ class ANiStrmPro(_PluginBase):
         url = f'https://openani.an-i.workers.dev/{self.__get_ani_season()}/'
 
         rep = RequestUtils(ua=settings.USER_AGENT if settings.USER_AGENT else None,
-                           proxies=settings.PROXY if settings.PROXY else None,
+                           proxies=self.__proxies(),
                            headers=self._ani_headers).post(url=url, json={'password': ''})
         logger.debug(rep.text)
         files_json = rep.json()['files']
@@ -170,7 +179,7 @@ class ANiStrmPro(_PluginBase):
         """
         url = f'https://openani.an-i.workers.dev/{season}/'
         rep = RequestUtils(ua=settings.USER_AGENT if settings.USER_AGENT else None,
-                           proxies=settings.PROXY if settings.PROXY else None,
+                           proxies=self.__proxies(),
                            headers=self._ani_headers).post(url=url, json={'password': ''})
         logger.debug(rep.text)
         files_json = rep.json()['files']
@@ -191,7 +200,7 @@ class ANiStrmPro(_PluginBase):
         encoded_anime = quote(anime_name, safe='')
         url = f'https://openani.an-i.workers.dev/{season}/{encoded_anime}/'
         rep = RequestUtils(ua=settings.USER_AGENT if settings.USER_AGENT else None,
-                           proxies=settings.PROXY if settings.PROXY else None,
+                           proxies=self.__proxies(),
                            headers=self._ani_headers).post(url=url, json={'password': ''})
         logger.debug(f"获取番剧 {anime_name} 的视频列表: {url}")
         files_json = rep.json()['files']
@@ -331,7 +340,7 @@ class ANiStrmPro(_PluginBase):
         """
         url = 'https://openani.an-i.workers.dev/'
         rep = RequestUtils(ua=settings.USER_AGENT if settings.USER_AGENT else None,
-                           proxies=settings.PROXY if settings.PROXY else None,
+                           proxies=self.__proxies(),
                            headers=self._ani_headers).post(url=url, json={'password': ''})
         logger.debug(rep.text)
         files_json = rep.json().get('files', [])
@@ -408,7 +417,7 @@ class ANiStrmPro(_PluginBase):
     def get_latest_list(self) -> List:
         addr = 'https://api.ani.rip/ani-download.xml'
         ret = RequestUtils(ua=settings.USER_AGENT if settings.USER_AGENT else None,
-                           proxies=settings.PROXY if settings.PROXY else None).get_res(addr)
+                           proxies=self.__proxies()).get_res(addr)
         ret_xml = ret.text
         ret_array = []
         # 解析XML
@@ -800,6 +809,23 @@ class ANiStrmPro(_PluginBase):
                                 },
                                 'content': [
                                     {
+                                        'component': 'VTextField',
+                                        'props': {
+                                            'model': 'proxy',
+                                            'label': '数据源代理（可选）',
+                                            'placeholder': 'http://10.0.0.1:7890'
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                'component': 'VCol',
+                                'props': {
+                                    'cols': 12,
+                                    'md': 4
+                                },
+                                'content': [
+                                    {
                                         'component': 'VSelect',
                                         'props': {
                                             'model': 'selected_seasons',
@@ -869,6 +895,7 @@ class ANiStrmPro(_PluginBase):
             "selected_seasons": [],
             "storageplace": '/downloads/strm',
             "storage_mode": "flat",
+            "proxy": "",
             "cron": "*/20 22,23,0,1 * * *",
         }
 
@@ -881,6 +908,7 @@ class ANiStrmPro(_PluginBase):
             "selected_seasons": self._selected_seasons,
             "storageplace": self._storageplace,
             "storage_mode": self._storage_mode,
+            "proxy": self._proxy,
         })
 
     def get_page(self) -> List[dict]:
