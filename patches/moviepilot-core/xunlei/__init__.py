@@ -73,11 +73,18 @@ class XunleiModule(_ModuleBase, _DownloaderBase[Xunlei]):
         download_url = None
         if isinstance(content, (str, bytes)):
             text = content if isinstance(content, str) else content.decode('utf-8', errors='ignore')
-            if text.startswith("magnet:") or text.startswith("http://") or text.startswith("https://"):
+            if text.startswith("magnet:"):
                 download_url = text
+            elif text.startswith("http://") or text.startswith("https://"):
+                # .torrent URL 自动解析为磁力链接
+                if text.rstrip().endswith(".torrent"):
+                    logger.info(f"迅雷下载器: 检测到 .torrent URL, 尝试解析为磁力链接")
+                    download_url = text  # xunlei.py add_task 会自动转换
+                else:
+                    download_url = text
 
         if not download_url:
-            return None, None, None, "迅雷下载器不支持该内容类型（仅支持磁力链接和HTTP/HTTPS URL）"
+            return None, None, None, "迅雷下载器不支持该内容类型"
 
         # 发送到迅雷
         task_id, error = server.add_task(url=download_url, download_dir=str(download_dir) if download_dir else None)
