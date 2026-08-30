@@ -129,18 +129,24 @@ class SubscribeOper(DbOper):
         return await Subscribe.async_get(self._db, rid=sid)
 
     def get_by(self, type: str, season: Optional[str] = None, tmdbid: Optional[int] = None,
-               doubanid: Optional[str] = None, bangumiid: Optional[str] = None) -> Optional[Subscribe]:
+               doubanid: Optional[str] = None, bangumiid: Optional[str] = None,
+               anilistid: Optional[int] = None, media_source: Optional[str] = None,
+               media_id: Optional[str] = None) -> Optional[Subscribe]:
         """
         根据条件查询订阅
         """
-        return Subscribe.get_by(self._db, type, season, tmdbid, doubanid, bangumiid)
+        return Subscribe.get_by(self._db, type, season, tmdbid, doubanid, bangumiid,
+                                 anilistid, media_source, media_id)
 
     async def async_get_by(self, type: str, season: Optional[str] = None, tmdbid: Optional[int] = None,
-                           doubanid: Optional[str] = None, bangumiid: Optional[str] = None) -> Optional[Subscribe]:
+                           doubanid: Optional[str] = None, bangumiid: Optional[str] = None,
+                           anilistid: Optional[int] = None, media_source: Optional[str] = None,
+                           media_id: Optional[str] = None) -> Optional[Subscribe]:
         """
         根据条件查询订阅
         """
-        return await Subscribe.async_get_by(self._db, type, season, tmdbid, doubanid, bangumiid)
+        return await Subscribe.async_get_by(self._db, type, season, tmdbid, doubanid, bangumiid,
+                                              anilistid, media_source, media_id)
 
     def list(self, state: Optional[str] = None) -> List[Subscribe]:
         """
