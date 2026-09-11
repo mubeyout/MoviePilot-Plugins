@@ -1,0 +1,21 @@
+FROM jxxghp/moviepilot-v3:3.0.0
+
+# ============ V3 后端补丁（极简版：绝大多数 V2 补丁已被 V3 原生吸收）============
+
+# DownloaderType.Xunlei 枚举注入（基于 v3.0.0 原版 types.py + Xunlei 成员）
+COPY moviepilot-core/types_v3.py /app/app/schemas/types.py
+
+# 迅雷下载器模块（capability.toml 声明，V3 Module 合同）
+COPY moviepilot-core/xunlei_v3/__init__.py /app/app/modules/xunlei/__init__.py
+COPY moviepilot-core/xunlei_v3/capability.toml /app/app/modules/xunlei/capability.toml
+COPY moviepilot-core/xunlei_v3/xunlei.py /app/app/modules/xunlei/xunlei.py
+
+# nginx: 插件联邦组件静态文件兜底（基于 v3.0.0 原版 common.conf + 兜底块）
+COPY moviepilot-core/nginx_common_v3_patched.conf /etc/nginx/common.conf
+
+# 前端注入工具（避免触碰 /app/docker 控制脚本校验链，放独立目录；部署时拷入 /config 使用）
+COPY moviepilot-core/stills-inject.js /app/patches-runtime/stills-inject.js
+COPY moviepilot-core/inject_stills.py /app/patches-runtime/inject_stills.py
+
+# 清除 pyc 缓存
+RUN find /app/app -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true

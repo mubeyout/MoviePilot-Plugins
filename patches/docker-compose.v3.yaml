@@ -1,0 +1,42 @@
+services:
+  moviepilot:
+    image: mubeyout/moviepilot:v3.0.0-patched
+    container_name: Moviepilot
+    restart: unless-stopped
+    network_mode: host
+    hostname: iStoreNextD
+    working_dir: /app
+    environment:
+      - CONFIG_DIR=/config
+      - DISPLAY=:987
+      - HTTP_PROXY=http://127.0.0.1:7890
+      - HTTPS_PROXY=http://127.0.0.1:7890
+      - MOVIEPILOT_AUTO_UPDATE=none
+      - NGINX_PORT=3003
+      - NO_PROXY=localhost,127.0.0.1,10.0.0.0/8,192.168.0.0/16
+      - PGID=0
+      - PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+      - PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      - PUID=0
+      - SUPERUSER=mubey
+      - TZ=Asia/Shanghai
+      - UMASK=000
+      - UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+    volumes:
+      # RW: config & plugin data
+      - /mnt/sda1/Configs/MoviePilot:/config
+      # 自有插件从 config 部署（替代 V2 entrypoint 补丁的 _install_plugin）
+      - /mnt/sda1/Configs/MoviePilot/plugins/v2/metatubesource:/app/app/plugins/metatubesource
+      - /mnt/sda1/Configs/MoviePilot/plugins/v2/bytemusediscover:/app/app/plugins/bytemusediscover
+      - /mnt/sda1/Configs/MoviePilot/plugins/v2/javbusextend:/app/app/plugins/javbusextend
+      - /mnt/sda1/Configs/MoviePilot/plugins/v2/anistrmpro:/app/app/plugins/anistrmpro
+      - /mnt/sda1/Configs/MoviePilot/plugins/v2/mubeyclashrp:/app/app/plugins/mubeyclashrp
+      - /mnt/sda1/Configs/MoviePilot/cache:/moviepilot/.cache
+      # RO: reference
+      - /mnt/sda1/Works/MUBEY/MoviePilot:/mnt/sda1/Works/MUBEY/MoviePilot:ro
+      - /mnt/sda1/Configs/mihomo:/mnt/sda1/Configs/mihomo:ro
+      - /mnt/sda1/Media:/mnt/sda1/Media:ro
+      - /home/mubey:/home/mubey:rw
+      - /home/mubey/Downloads:/downloads:rw
+      - /var/run/docker.sock:/var/run/docker.sock:ro
