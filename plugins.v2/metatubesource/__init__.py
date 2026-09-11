@@ -1656,7 +1656,11 @@ class MetatubeSource(_PluginBase):
                                  doubanid: Optional[str] = None,
                                  bangumiid: Optional[int] = None,
                                  episode_group: Optional[str] = None,
-                                 cache: bool = True) -> Optional[MediaInfo]:
+                                 cache: bool = True,
+                                 media_source: Optional[str] = None,
+                                 media_id: Optional[str] = None,
+                                 share_meta=None,
+                                 music_type: Optional[str] = None) -> Optional[MediaInfo]:
         """
         模块劫持识别方法（关键字优先模式）
 
@@ -1701,7 +1705,11 @@ class MetatubeSource(_PluginBase):
                                              doubanid: Optional[str] = None,
                                              bangumiid: Optional[int] = None,
                                              episode_group: Optional[str] = None,
-                                             cache: bool = True) -> Optional[MediaInfo]:
+                                             cache: bool = True,
+                                             media_source: Optional[str] = None,
+                                             media_id: Optional[str] = None,
+                                             share_meta=None,
+                                             music_type: Optional[str] = None) -> Optional[MediaInfo]:
         """
         异步模块劫持识别方法（关键字优先模式）
 
