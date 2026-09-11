@@ -6,6 +6,7 @@ services:
     network_mode: host
     hostname: iStoreNextD
     working_dir: /app
+    entrypoint: ["/usr/bin/tini", "-g", "--", "/config/v3_plugin_deploy.sh", "/usr/local/lib/moviepilot/control/entrypoint.sh"]
     environment:
       - CONFIG_DIR=/config
       - DISPLAY=:987
@@ -26,12 +27,8 @@ services:
     volumes:
       # RW: config & plugin data
       - /mnt/sda1/Configs/MoviePilot:/config
-      # 自有插件从 config 部署（替代 V2 entrypoint 补丁的 _install_plugin）
-      - /mnt/sda1/Configs/MoviePilot/plugins/v2/metatubesource:/app/app/plugins/metatubesource
-      - /mnt/sda1/Configs/MoviePilot/plugins/v2/bytemusediscover:/app/app/plugins/bytemusediscover
-      - /mnt/sda1/Configs/MoviePilot/plugins/v2/javbusextend:/app/app/plugins/javbusextend
-      - /mnt/sda1/Configs/MoviePilot/plugins/v2/anistrmpro:/app/app/plugins/anistrmpro
-      - /mnt/sda1/Configs/MoviePilot/plugins/v2/mubeyclashrp:/app/app/plugins/mubeyclashrp
+      # 自有插件部署器（entrypoint 包装，拷贝而非 bind-mount——V3 插件安装器需 rename 插件目录，挂载点会 EBUSY）
+      - /mnt/sda1/Configs/MoviePilot/v3_plugin_deploy.sh:/config/v3_plugin_deploy.sh:ro
       - /mnt/sda1/Configs/MoviePilot/cache:/moviepilot/.cache
       # RO: reference
       - /mnt/sda1/Works/MUBEY/MoviePilot:/mnt/sda1/Works/MUBEY/MoviePilot:ro
