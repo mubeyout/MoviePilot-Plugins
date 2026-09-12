@@ -1,0 +1,274 @@
+import re
+from typing import Optional, Tuple
+from urllib.parse import unquote, urlparse
+
+from app.log import logger
+from app.utils.http import RequestUtils
+
+
+def _extract_display_name(url: str) -> str:
+    """
+    从磁力链接或 HTTP URL 中提取显示名称
+    - magnet:?...&dn=显示名 → 显示名
+    - http://.../文件名.torrent → 文件名
+    - 其他 → URL前50字符
+    """
+    if url.startswith("magnet:"):
+        match = re.search(r'\bdn=([^&]+)', url)
+        if match:
+            try:
+                return unquote(match.group(1))
+            except Exception:
+                return match.group(1)
+        # 没有 dn，用 btih 前几位代替
+        match = re.search(r'btih:([A-Fa-f0-9]{40})', url)
+        if match:
+            return match.group(1)[:12]
+    elif url.startswith(("http://", "https://")):
+        path = urlparse(url).path
+        if path:
+            name = path.rstrip('/').rsplit('/', 1)[-1]
+            if name:
+                return unquote(name)
+    return url[:50]
+
+
+class Xunlei:
+    """
+    迅雷NAS远程下载器
+    """
+
+    # 安卓 App 参数（用于绕过 NAS PAN_CLI_PREVIEW 的每日 3 任务限制）
+    _ANDROID_PARAMS = {
+        "client_id": "Xp6vsxz_7IYVw2BB",
+        "client_version": "8.03.0.9067",
+        "device_model": "KB2000",
+        "package_name": "ANDROID-com.xunlei.downloadprovider",
+        "platform": "synology",
+        "speed_limit": "-1",
+    }
+
+    def __init__(self, name: str, server_url: Optional[str] = None,
+                 pan_auth: Optional[str] = None,
+                 file_id: Optional[str] = None,
+                 nas_user: Optional[str] = None,
+                 nas_pass: Optional[str] = None,
+                 **kwargs):
+        self._name = name
+        self._server_url = (server_url or "").rstrip("/")
+        self._pan_auth = pan_auth or ""
+        self._file_id = file_id or ""
+        self._nas_user = nas_user or ""
+        self._nas_pass = nas_pass or ""
+
+    @property
+    def base_url(self) -> str:
+        return f"{self._server_url}/webman/3rdparty/pan-xunlei-com/index.cgi"
+
+    @property
+    def headers(self) -> dict:
+        return {
+            "Content-Type": "application/json",
+            "pan-auth": self._pan_auth,
+        }
+
+    def test_connection(self) -> Tuple[bool, str]:
+        """测试连接"""
+        if not self._server_url:
+            return False, "未配置服务器地址"
+        try:
+            token = self.refresh_token()
+            if token:
+                self._pan_auth = token
+            res = RequestUtils(headers=self.headers).get_res(
+                url=f"{self.base_url}/device/now"
+            )
+            if res is not None and res.status_code == 200:
+                return True, ""
+            return False, f"连接迅雷NAS失败: HTTP {res.status_code if res else 'No response'}"
+        except Exception as e:
+            return False, f"连接异常: {str(e)}"
+
+    def refresh_token(self) -> Optional[str]:
+        """从迅雷NAS页面获取pan_auth token"""
+        if not self._server_url:
+            return None
+        try:
+            import requests as _req
+            url = f"{self._server_url}/webman/3rdparty/pan-xunlei-com/index.cgi/"
+            if self._nas_user and self._nas_pass:
+                auth = (self._nas_user, self._nas_pass)
+            else:
+                auth = None
+            try:
+                res = RequestUtils().get_res(url=url)
+                if res is None or res.status_code != 200:
+                    raise Exception(f"HTTP {res.status_code if res else 'None'}")
+            except Exception:
+                res = _req.get(url, auth=auth, timeout=10, allow_redirects=True)
+            if res is not None and res.status_code == 200:
+                match = re.search(
+                    r'function\s+uiauth\s*\(\s*\w+\s*\)\s*\{\s*return\s*"([^"]+)"',
+                    res.text
+                )
+                if match:
+                    logger.info(f"迅雷下载器 {self._name} pan_auth token 刷新成功")
+                    return match.group(1)
+                else:
+                    logger.error(f"迅雷下载器 {self._name} 未找到 uiauth token，请确认迅雷账号已绑定")
+            else:
+                logger.error(f"迅雷下载器 {self._name} 访问NAS页面失败: HTTP {res.status_code if res else 'None'}")
+        except Exception as e:
+            logger.error(f"迅雷下载器 {self._name} 刷新token失败: {e}")
+        return None
+
+    def _post_task(self, url: str, payload: dict) -> any:
+        """发送创建任务请求（统一封装）"""
+        import requests as _req
+        try:
+            res = RequestUtils(headers=self.headers).post_res(
+                url=url,
+                json=payload
+            )
+            if res is None:
+                res = _req.post(
+                    url,
+                    json=payload,
+                    headers=self.headers,
+                    timeout=30
+                )
+        except Exception:
+            res = _req.post(
+                url,
+                json=payload,
+                headers=self.headers,
+                timeout=30
+            )
+        return res
+
+    def add_task(self, url: str, download_dir: str = None) -> Tuple[Optional[str], Optional[str]]:
+        """
+        创建下载任务
+        返回: (task_id, error)
+        """
+        if not self._pan_auth:
+            self._pan_auth = self.refresh_token()
+        if not self._pan_auth:
+            return None, "pan_auth token 获取失败，请确认迅雷NAS地址和账号绑定状态"
+
+        display_name = _extract_display_name(url)
+        payload = {
+            "kind": "drive#task",
+            "type": "user#download",
+            "name": display_name,
+            "file_size": "0",
+            "params": {
+                **self._ANDROID_PARAMS,
+                "url": url,
+            }
+        }
+
+        task_url = f"{self.base_url}/drive/v1/task"
+
+        try:
+            res = self._post_task(task_url, payload)
+
+            if res is None:
+                return None, "迅雷NAS无响应"
+
+            # 401: token 过期，刷新后重试一次
+            if hasattr(res, 'status_code') and res.status_code == 401:
+                logger.warning(f"迅雷下载器 {self._name} token 过期(401)，尝试刷新")
+                new_token = self.refresh_token()
+                if new_token:
+                    self._pan_auth = new_token
+                    res = self._post_task(task_url, payload)
+                else:
+                    return None, "pan_auth token 过期且刷新失败"
+
+            try:
+                data = res.json()
+            except Exception:
+                return None, f"HTTP {res.status_code}: {res.text[:200]}"
+
+            if "error" in data:
+                error_code = data.get("error", "")
+                error_desc = data.get("error_description", "")
+                # 401 再次出现
+                if error_code == "unauthorized" or (hasattr(res, 'status_code') and res.status_code == 401):
+                    return None, "迅雷token无效或已过期，请在迅雷NAS中重新绑定账号"
+                # task_create_count_limit: 先清理 PENDING 任务再重试
+                if error_code == "task_create_count_limit":
+                    logger.warning(f"迅雷下载器 {self._name} 任务创建次数达到上限，尝试清理 PENDING 任务")
+                    self._cleanup_pending_tasks()
+                    res = self._post_task(task_url, payload)
+                    if res is not None:
+                        try:
+                            retry_data = res.json()
+                            if "error" not in retry_data:
+                                task = retry_data.get("task", {})
+                                task_id = task.get("id", "")
+                                task_name = task.get("name", display_name)
+                                logger.info(f"迅雷下载器 {self._name} 重试创建任务成功: {task_id} - {task_name}")
+                                return task_id, None
+                            else:
+                                return None, f"迅雷错误: {retry_data.get('error')} - {retry_data.get('error_description', '')}"
+                        except Exception:
+                            pass
+                    return None, f"迅雷错误: 今日任务创建次数已达上限（非VIP每日3次），开通会员可解除限制"
+                return None, f"迅雷错误: {error_code} - {error_desc}"
+
+            task = data.get("task", {})
+            task_id = task.get("id", "")
+            task_name = task.get("name", display_name)
+            logger.info(f"迅雷下载器 {self._name} 创建任务: {task_id} - {task_name}")
+            return task_id, None
+        except Exception as e:
+            logger.error(f"迅雷下载器 {self._name} 创建任务失败: {e}")
+            return None, str(e)
+
+
+    def _cleanup_pending_tasks(self) -> int:
+        """
+        清理 PENDING 状态的下载任务（通常是种子无做种者卡住的）
+        返回清理的任务数
+        """
+        if not self._pan_auth:
+            return 0
+        try:
+            from urllib.parse import quote
+            task_type = quote("user#download")
+            url = f"{self.base_url}/drive/v1/tasks?type={task_type}&pan_auth={self._pan_auth}&device_space="
+            res = RequestUtils(headers=self.headers).get_res(url=url)
+            if res is not None and res.status_code == 200:
+                data = res.json()
+                tasks = data.get("tasks", [])
+                cleaned = 0
+                for t in tasks:
+                    if t.get("phase") == "PHASE_TYPE_PENDING":
+                        tid = t.get("id", "")
+                        del_url = f"{self.base_url}/drive/v1/task/{tid}"
+                        RequestUtils(headers=self.headers).delete_res(url=del_url)
+                        cleaned += 1
+                if cleaned > 0:
+                    logger.info(f"迅雷下载器 {self._name} 清理了 {cleaned} 个 PENDING 任务")
+                return cleaned
+        except Exception as e:
+            logger.error(f"迅雷下载器 {self._name} 清理 PENDING 任务失败: {e}")
+        return 0
+
+    def get_tasks(self) -> Tuple[Optional[list], Optional[str]]:
+        """获取任务列表"""
+        if not self._pan_auth:
+            return None, "No token"
+        from urllib.parse import quote
+        task_type = quote("user#runner")
+        url = f"{self.base_url}/drive/v1/tasks?type={task_type}&pan_auth={self._pan_auth}&device_space="
+        try:
+            res = RequestUtils(headers=self.headers).get_res(url=url)
+            if res is not None and res.status_code == 200:
+                data = res.json()
+                return data.get("tasks", []), None
+            return None, f"HTTP {res.status_code if res else 'No response'}"
+        except Exception as e:
+            return None, str(e)
