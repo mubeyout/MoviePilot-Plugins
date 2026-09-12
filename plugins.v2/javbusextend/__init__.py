@@ -226,7 +226,8 @@ class JavBusExtend(_PluginBase):
     def refresh_torrents(self, site: dict,
                          keyword: Optional[str] = None,
                          cat: Optional[str] = None,
-                         page: Optional[int] = 0) -> List[dict]:
+                         page: Optional[int] = 0,
+                         mtype: Optional[str] = None) -> List[dict]:
         """
         刷新 JavBus 最新磁力资源（browse 首页列表模式）
         使用 /api/movies?page=N&magnet=exist 获取有磁力的最新影片列表
