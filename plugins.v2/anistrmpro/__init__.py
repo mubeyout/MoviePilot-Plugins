@@ -17,7 +17,7 @@ from app.utils.dom import DomUtils
 
 
 def retry(ExceptionToCheck: Any,
-          tries: int = 3, delay: int = 3, backoff: int = 1, logger: Any = None, ret: Any = None):
+          tries: int = 3, delay: int = 3, backoff: int = 2, logger: Any = None, ret: Any = None):
     """
     :param ExceptionToCheck: 需要捕获的异常
     :param tries: 重试次数
@@ -34,7 +34,7 @@ def retry(ExceptionToCheck: Any,
                 try:
                     return f(*args, **kwargs)
                 except ExceptionToCheck as e:
-                    msg = f"未获取到文件信息，{mdelay}秒后重试 ..."
+                    msg = f"未获取到文件信息({e})，{mdelay}秒后重试 ..."
                     if logger:
                         logger.warn(msg)
                     else:
@@ -170,7 +170,7 @@ class ANiStrmPro(_PluginBase):
         files_json = rep.json()['files']
         return [file['name'] for file in files_json]
 
-    @retry(Exception, tries=3, logger=logger, ret=[])
+    @retry(Exception, tries=3, logger=logger, ret=([], None))
     def get_season_list(self, season: str) -> Tuple[List, str]:
         """
         获取指定季度的番剧列表（仅返回番剧文件夹名）
